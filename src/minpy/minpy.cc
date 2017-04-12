@@ -3,7 +3,9 @@
  * \file minpy.cc
  * \brief Minpy.
  */
+#include <cassert>
 #include <mxnet/minpy.h>
+#include "../c_api/c_api_ndarray.h"
 
 namespace mxnet {
 namespace minpy {
@@ -11,53 +13,44 @@ namespace minpy {
 namespace {
 
 // Call underlying functin in the old way.
-void StrictEvaluation(ComputingRecord record) {
-  if (record.delayed_function.index() == 0) {
-    PushFCompute(record.delayed_function.get<FCompute>(), record.op,
-                 record.attrs, record.ctx, record.read_vars, record.write_vars,
-                 record.requested, record.ndinputs, record.ndoutputs);
-  } else {
-    auto&& p =
-        record.delayed_function
-            .get<std::pair<std::shared_ptr<Operator>, std::vector<uint32_t>>>();
-    PushOperator(p.first, record.op, record.op, record.op, record.op_vars,
-                 record.op_vars, record.op, p.second, record.ndinputs,
-                 record.ndoutputs);
-  }
+void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
+  PushFCompute(record.delayed_function, &record.op, record.attrs,
+               record.ctx, record.read_vars, record.write_vars,
+               record.requested, record.ndinputs, record.ndoutputs);
 }
 
 }  // anonymous namespace
 
 void ImperativeRuntime::EnableJIT() {
-  Assert(!jit_enabled_);
+  assert(!jit_enabled_);
   jit_enabled_ = true;
 }
 
 void ImperativeRuntime::DisableJIT() {
-  Assert(jit_enabled_);
-  FlushJITSequenc();
+  assert(jit_enabled_);
+  FlushJITSequence();
   jit_enabled_ = false;
 }
 
 // void ImperativeRuntime::EnableAutograd() {
-//   Assert(!autograd_enabled_);
+//   assert(!autograd_enabled_);
 //   autograd_enabled_ = true;
 // }
 
 // void ImperativeRuntime::DisableAutograd() {
-//   Assert(autograd_enabled_);
+//   assert(autograd_enabled_);
 //   FlushGradSequence();
 //   autograd_enabled_ = false;
 // }
 
 void ImperativeRuntime::StrictEvaluate() {
-  DisableAutograd();
-  EnableAutograd();
+  // DisableAutograd();
+  // EnableAutograd();
   // TODO(yutian): Call `MXNDArrayWaitToRead`
 }
 
 void ImperativeRuntime::Invoke(ComputingRecord record) {
-  PushAutogradRecord(record);
+  // PushAutogradRecord(record);
   PushJITRecord(record);
 }
 
@@ -72,13 +65,14 @@ void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
     // Save for lazy evaluation.
     jit_sequence_.emplace_back(std::move(record));
   } else {
-    StrictEvaluate(std::move(record));
+    DoStrictEvaluation(std::move(record));
   }
 }
 
 void ImperativeRuntime::FlushJITSequence() {
-  for (auto&& i : jit_component_.Process(std::move(jit_sequence_))) {
-    StrictEvaluate(std::move(i));
+  // for (auto&& i : jit_component_.Process(std::move(jit_sequence_))) {
+  for (auto&& i : jit_sequence_) {
+    DoStrictEvaluation(std::move(i));
   }
   jit_sequence_.clear();
 }

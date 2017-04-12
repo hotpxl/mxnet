@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <vector>
+#include "./op_attr_types.h"
 
 // extern "C" {
 //
