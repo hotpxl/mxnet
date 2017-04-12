@@ -26,6 +26,8 @@
 // int MXNDArrayWaitToWrite(NDArrayHandle handle);
 //}
 
+// TODO: add corresponding C API for enabling and disabling JIT
+// TODO: intercept calls to MXImperativeInvoke and redirect to here
 namespace mxnet {
 namespace minpy {
 
