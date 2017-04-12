@@ -28,6 +28,8 @@
 
 // TODO: add corresponding C API for enabling and disabling JIT
 // TODO: intercept calls to MXImperativeInvoke and redirect to here
+// TODO: record operator related information in sequence
+// TODO: flush and do computation at a later stage
 namespace mxnet {
 namespace minpy {
 
