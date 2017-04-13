@@ -26,7 +26,6 @@
 // int MXNDArrayWaitToWrite(NDArrayHandle handle);
 //}
 
-// TODO: add corresponding C API for enabling and disabling JIT
 // TODO: intercept calls to MXImperativeInvoke and redirect to here
 // TODO: record operator related information in sequence
 // TODO: flush and do computation at a later stage
@@ -61,13 +60,14 @@ class ImperativeRuntime final {
 
   void Invoke(ComputingRecord record);
 
+  virtual ~ImperativeRuntime() = default;
+
  private:
   ImperativeRuntime() = default;
   ImperativeRuntime(ImperativeRuntime const&) = delete;
   ImperativeRuntime(ImperativeRuntime&&) = delete;
   ImperativeRuntime& operator=(ImperativeRuntime const&) = delete;
   ImperativeRuntime& operator=(ImperativeRuntime&&) = delete;
-  virtual ~ImperativeRuntime() = default;
 
   // void PushAutogradRecord(ComputingRecord record);
   void PushJITRecord(ComputingRecord record);

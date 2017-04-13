@@ -15,6 +15,7 @@
 #include <mxnet/c_api.h>
 #include <mxnet/kvstore.h>
 #include <mxnet/mxrtc.h>
+#include <mxnet/minpy.h>
 #include <vector>
 #include <sstream>
 #include <string>

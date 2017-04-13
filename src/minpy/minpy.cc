@@ -77,6 +77,11 @@ void ImperativeRuntime::FlushJITSequence() {
   jit_sequence_.clear();
 }
 
+ImperativeRuntime* ImperativeRuntime::Get() {
+  static std::shared_ptr<ImperativeRuntime> sptr(new ImperativeRuntime());
+  return sptr.get();
+}
+
 // void ImperativeRuntime:: ::FlushAutogradSequence() {
 //   for (auto&& i : autograd_component_.Process(std::move(autograd_sequence_)))
 //   {
