@@ -51,9 +51,9 @@ void ImperativeRuntime::DisableJIT() {
 // }
 
 void ImperativeRuntime::StrictEvaluate() {
-  // DisableAutograd();
-  // EnableAutograd();
-  // TODO(yutian): Call `MXNDArrayWaitToRead`
+  if (jit_enabled_) {
+    FlushJITSequence();
+  }
 }
 
 void ImperativeRuntime::Invoke(ComputingRecord record) {

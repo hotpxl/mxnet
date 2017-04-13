@@ -14,6 +14,7 @@
 #include <mxnet/io.h>
 #include <mxnet/c_api.h>
 #include <mxnet/kvstore.h>
+#include <mxnet/minpy.h>
 #include <mxnet/mxrtc.h>
 #include <vector>
 #include <sstream>
@@ -186,6 +187,8 @@ int MXNDArraySyncCopyToCPU(NDArrayHandle handle,
                            void *data,
                            size_t size) {
   API_BEGIN();
+  // TODO(yutian): Check for other entry points.
+  minpy::ImperativeRuntime::Get()->StrictEvaluate();
   static_cast<NDArray*>(handle)->SyncCopyToCPU(data, size);
   API_END();
 }
