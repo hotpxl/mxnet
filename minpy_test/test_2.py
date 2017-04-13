@@ -1,3 +1,4 @@
+"""Test strict evalutation on disabling JIT."""
 import mxnet as mx
 import time
 mx.minpy.enable_jit()

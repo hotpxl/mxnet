@@ -1,3 +1,4 @@
+"""Test strict evaluation on invoking `asnumpy()`."""
 import mxnet as mx
 import time
 mx.minpy.enable_jit()

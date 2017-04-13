@@ -27,8 +27,7 @@
 // int MXNDArrayWaitToWrite(NDArrayHandle handle);
 //}
 
-// TODO: record operator related information in sequence
-// TODO: flush and do computation at a later stage
+// TODO(yutian): record operator related information in sequence
 namespace mxnet {
 namespace minpy {
 
