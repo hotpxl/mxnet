@@ -22,6 +22,7 @@
 //// When these two functions are called, flush JIT sequence to make sure data
 /// is
 //// truly ready.
+// TODO(yutian): Intercept calls for explicit evaluation points.
 // int MXNDArrayWaitToRead(NDArrayHandle handle);
 // int MXNDArrayWaitToWrite(NDArrayHandle handle);
 //}
