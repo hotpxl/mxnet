@@ -46,7 +46,7 @@ class ImperativeRuntime final {
   struct ComputingRecord {
     using DelayedFunction = FCompute;
     DelayedFunction delayed_function;
-    nnvm::Op op;
+    nnvm::Op const* op;
     nnvm::NodeAttrs attrs;
     Context ctx;
     std::vector<engine::VarHandle> read_vars;
@@ -60,10 +60,9 @@ class ImperativeRuntime final {
 
   void Invoke(ComputingRecord record);
 
-  virtual ~ImperativeRuntime() = default;
-
  private:
   ImperativeRuntime() = default;
+  virtual ~ImperativeRuntime() = default;
   ImperativeRuntime(ImperativeRuntime const&) = delete;
   ImperativeRuntime(ImperativeRuntime&&) = delete;
   ImperativeRuntime& operator=(ImperativeRuntime const&) = delete;

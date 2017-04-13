@@ -6,6 +6,7 @@
 
 #include <mxnet/base.h>
 #include <mxnet/c_api.h>
+#include <mxnet/minpy.h>
 #include <mxnet/operator.h>
 #include <mxnet/operator_util.h>
 #include <mxnet/op_attr_types.h>
@@ -371,12 +372,18 @@ int MXImperativeInvoke(AtomicSymbolCreator creator,
     }
 
     if (fn) {
-      if (AutogradRuntime::Get()->IsRecording()) {
-        AutogradRuntime::Get()->RecordImperativeFCompute(fn, op,
-            attrs, &ndinputs, &ndoutputs);
-      }
-      PushFCompute(fn, op, attrs, ctx, read_vars, write_vars,
-          requested, ndinputs, ndoutputs);
+      // TODO(yutian): Great. We have a FCompute here and we want to redirect it
+      // to ImperativeRuntime to execute.
+      // if (AutogradRuntime::Get()->IsRecording()) {
+      //   AutogradRuntime::Get()->RecordImperativeFCompute(fn, op,
+      //       attrs, &ndinputs, &ndoutputs);
+      // }
+      // PushFCompute(fn, op, attrs, ctx, read_vars, write_vars,
+      //     requested, ndinputs, ndoutputs);
+      // TODO(yutian): Question. Is it safe to record op here? Answer(ziheng): Yes.
+      minpy::ImperativeRuntime::Get()->Invoke({fn, op, attrs, ctx, read_vars,
+                                               write_vars, requested, ndinputs,
+                                               ndoutputs});
     } else if (createop.count(op)) {
       std::shared_ptr<Operator> opr(
           createop[op](attrs, ctx, ret->arg_shapes, ret->arg_types));

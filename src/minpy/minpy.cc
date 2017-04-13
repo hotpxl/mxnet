@@ -1,10 +1,11 @@
 /*!
  * Copyright (c) 2017 by Contributors
  * \file minpy.cc
- * \brief Minpy.
+ * \brief MinPy.
  */
-#include <cassert>
 #include <mxnet/minpy.h>
+#include <cassert>
+#include <cstdio>
 #include "../c_api/c_api_ndarray.h"
 
 namespace mxnet {
@@ -14,12 +15,18 @@ namespace {
 
 // Call underlying functin in the old way.
 void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
-  PushFCompute(record.delayed_function, &record.op, record.attrs,
-               record.ctx, record.read_vars, record.write_vars,
-               record.requested, record.ndinputs, record.ndoutputs);
+  std::printf("Strict evaluating \"%s\".\n", record.op->name.c_str());
+  PushFCompute(record.delayed_function, record.op, record.attrs, record.ctx,
+               record.read_vars, record.write_vars, record.requested,
+               record.ndinputs, record.ndoutputs);
 }
 
 }  // anonymous namespace
+
+ImperativeRuntime* ImperativeRuntime::Get() {
+  static ImperativeRuntime r{};
+  return &r;
+}
 
 void ImperativeRuntime::EnableJIT() {
   assert(!jit_enabled_);
@@ -63,6 +70,7 @@ void ImperativeRuntime::Invoke(ComputingRecord record) {
 void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
   if (jit_enabled_) {
     // Save for lazy evaluation.
+    std::printf("Save \"%s\" for lazy evaluation.\n", record.op->name.c_str());
     jit_sequence_.emplace_back(std::move(record));
   } else {
     DoStrictEvaluation(std::move(record));
@@ -75,11 +83,6 @@ void ImperativeRuntime::FlushJITSequence() {
     DoStrictEvaluation(std::move(i));
   }
   jit_sequence_.clear();
-}
-
-ImperativeRuntime* ImperativeRuntime::Get() {
-  static std::shared_ptr<ImperativeRuntime> sptr(new ImperativeRuntime());
-  return sptr.get();
 }
 
 // void ImperativeRuntime:: ::FlushAutogradSequence() {
