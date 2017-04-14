@@ -22,7 +22,6 @@
 //// When these two functions are called, flush JIT sequence to make sure data
 /// is
 //// truly ready.
-// TODO(yutian): Intercept calls for explicit evaluation points.
 // int MXNDArrayWaitToRead(NDArrayHandle handle);
 // int MXNDArrayWaitToWrite(NDArrayHandle handle);
 //}
@@ -38,6 +37,7 @@ class ImperativeRuntime final {
   // Python-side utility functions.
   void EnableJIT();
   void DisableJIT();
+  // TODO(yutian): Reenable autograd interface.
   // void EnableAutograd();
   // void DisableAutograd();
   void StrictEvaluate();
@@ -53,8 +53,6 @@ class ImperativeRuntime final {
     std::vector<Resource> requested;
     std::vector<NDArray> ndinputs;
     std::vector<NDArray> ndoutputs;
-    // Missing: ID of op, info of op
-    // Missing: ID of intermediate tensor
   };
 
   void Invoke(ComputingRecord record);

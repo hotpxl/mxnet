@@ -79,6 +79,7 @@ void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
 
 void ImperativeRuntime::FlushJITSequence() {
   // for (auto&& i : jit_component_.Process(std::move(jit_sequence_))) {
+  // TODO(yutian): Do symbolic graph generation and insertion.
   for (auto&& i : jit_sequence_) {
     DoStrictEvaluation(std::move(i));
   }
