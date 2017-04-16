@@ -34,6 +34,10 @@ namespace autograd {
 class AutogradRuntime;
 }
 
+namespace minpy {
+class ImperativeRuntime;
+};
+
 /*!
  * \brief ndarray interface
  */
@@ -352,6 +356,7 @@ class NDArray {
 
  private:
   friend class autograd::AutogradRuntime;
+  friend class minpy::ImperativeRuntime;
   /*! \brief the real data chunk that backs NDArray */
   struct Chunk {
     /*! \brief storage handlefrom storage engine */
