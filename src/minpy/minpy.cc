@@ -78,11 +78,55 @@ void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
 }
 
 void ImperativeRuntime::FlushJITSequence() {
-  // for (auto&& i : jit_component_.Process(std::move(jit_sequence_))) {
-  // TODO(yutian): Do symbolic graph generation and insertion.
-  for (auto&& i : jit_sequence_) {
-    DoStrictEvaluation(std::move(i));
+  typedef bool EntryState;
+  const EntryState kLeaf  = true;
+  const EntryState kInner = false;
+  using nnvm::Node;
+  using nnvm::NodePtr;
+  using nnvm::NodeEntry;
+
+  static int node_count = 0;
+  nnvm::NodeEntryMap<EntryState> entry_state;
+  for (auto&& record : jit_sequence_) {
+    std::vector<NDArray>& ndinputs  = record.ndinputs;
+    std::vector<NDArray>& ndoutputs = record.ndoutputs;
+
+    NodePtr nn_node = Node::Create();
+    nn_node->attrs = record.attrs;
+    nn_node->attrs.name = "agnode_" + std::to_string(node_count++);
+
+    for (size_t i = 0; i < ndoutputs.size(); ++i) {
+      NodeEntry& e = ndoutputs[i].entry_;
+      e = NodeEntry{nn_node, i, 0};
+
+      if (!entry_state.count(e)) {
+        entry_state.emplace(e, kLeaf);
+      }
+    }
+
+    for (size_t i = 0; i < ndinputs.size(); ++i) {
+      NodeEntry& e = ndinputs[i].entry_;
+      if (e.node.get() == nullptr) {
+        e.node = Node::Create();
+      }
+      nn_node->inputs.emplace_back(e);
+      entry_state[e] = kInner;
+    }
+
+    DoStrictEvaluation(std::move(record));
   }
+
+  std::vector<NodeEntry> graph_outputs;
+  for (auto& kv : entry_state) {
+    if (kv.second == kLeaf) {
+      graph_outputs.emplace_back(kv.first);
+    }
+  }
+
+  nnvm::Symbol sym;
+  sym.outputs = graph_outputs;
+  sym.Print(std::cout);
+
   jit_sequence_.clear();
 }
 
