@@ -94,6 +94,9 @@ class ImperativeRuntime final {
   // JITComponent jit_component_{};
   // std::vector<ComputingRecord> autograd_sequence_{};
   std::vector<ComputingRecord> jit_sequence_{};
+
+  // TODO(Haoran): should replace with smart ptr
+  // However, using smart ptr would fail (Delete some NDarray that is already freed)
   std::vector<JitGraph*> jit_graphs_{};
 
   bool jit_enabled_ = false;

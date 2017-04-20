@@ -149,6 +149,7 @@ void ImperativeRuntime::JitGraph::BuildGraph() {
 
   for (auto&& record : jit_sequence_) {
 
+    // TODO(Haoran): It might fail if one ndarray is used as the outputs for multiple ops
     for (auto&& input : record.ndinputs) {
       auto it = ndoutputs_map_.find(reinterpret_cast<size_t>(input.ptr_.get()));
       ndinputs_id_.emplace_back((it != ndoutputs_map_.end())? it->second : UNMATCHID);
@@ -181,10 +182,10 @@ bool ImperativeRuntime::JitGraph::EqualGraph(const JitGraph& rhs)const {
       return false;
     }
 
-    auto &lhs_ndinputs = lhs.jit_sequence_[i].ndinputs;
-    auto &lhs_ndoutputs = lhs.jit_sequence_[i].ndoutputs;
-    auto &rhs_ndinputs = rhs.jit_sequence_[i].ndinputs;
-    auto &rhs_ndoutputs = rhs.jit_sequence_[i].ndoutputs;
+    auto &lhs_ndinputs = lhs.jit_sequence_[i].ndinputs,
+         &lhs_ndoutputs = lhs.jit_sequence_[i].ndoutputs,
+         &rhs_ndinputs = rhs.jit_sequence_[i].ndinputs,
+         &rhs_ndoutputs = rhs.jit_sequence_[i].ndoutputs;
 
     // Compare Inputs & Outputs Size
     if (lhs_ndinputs.size() != rhs_ndinputs.size()
