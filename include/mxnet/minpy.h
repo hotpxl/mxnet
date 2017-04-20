@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <vector>
+#include <map>
 #include "./op_attr_types.h"
 
 // extern "C" {
@@ -55,6 +56,23 @@ class ImperativeRuntime final {
     std::vector<NDArray> ndoutputs;
   };
 
+  class JitGraph {
+   public:
+    JitGraph(const std::vector<ImperativeRuntime::ComputingRecord> &jit_sequence)
+      :ndoutputs_map_{}, ndinputs_id_{}, jit_sequence_{jit_sequence} {
+      BuildGraph();
+    }
+    virtual ~JitGraph() = default;
+
+    void BuildGraph();
+    bool EqualGraph(const JitGraph&)const;
+
+   private:
+    std::map<size_t, size_t> ndoutputs_map_;
+    std::vector<size_t> ndinputs_id_;
+    std::vector<ImperativeRuntime::ComputingRecord> jit_sequence_;
+  };
+
   void Invoke(ComputingRecord record);
 
  private:
@@ -76,6 +94,7 @@ class ImperativeRuntime final {
   // JITComponent jit_component_{};
   // std::vector<ComputingRecord> autograd_sequence_{};
   std::vector<ComputingRecord> jit_sequence_{};
+  std::vector<JitGraph*> jit_graphs_{};
 
   bool jit_enabled_ = false;
   bool autograd_enabled_ = false;
