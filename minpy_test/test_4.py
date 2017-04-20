@@ -32,7 +32,14 @@ c = b - a
 print(c.asnumpy())
 print
 
-print("Run G5, which size is different from G1")
+print("Run G5, whose size is different from G1")
+a = mx.nd.ones(3)
+b = mx.nd.ones(3)
+c = a + b
+print(c.asnumpy())
+print
+
+print("Run G6, which is identical to G5")
 a = mx.nd.ones(3)
 b = mx.nd.ones(3)
 c = a + b
