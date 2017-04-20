@@ -167,6 +167,7 @@ void ImperativeRuntime::FlushJITSequence() {
 
   static int node_count = 0;
   nnvm::NodeEntryMap<EntryState> entry_state;
+  std::unordered_map<NDArray::Chunk*, NodeEntry> array_to_entry{};
   for (auto&& record : jit_sequence_) {
     std::vector<NDArray>& inputs = record.inputs;
     std::vector<NDArray>& outputs = record.outputs;
@@ -176,17 +177,19 @@ void ImperativeRuntime::FlushJITSequence() {
     nn_node->attrs.name = "agnode_" + std::to_string(node_count++);
 
     for (size_t i = 0; i < outputs.size(); ++i) {
-      NodeEntry& e = outputs[i].entry_;
-      e = NodeEntry{nn_node, static_cast<uint32_t>(i), 0};
-
+      NodeEntry e{nn_node, static_cast<uint32_t>(i), 0};
+      array_to_entry.insert({outputs[i].ptr_.get(), e});
       if (!entry_state.count(e)) {
         entry_state.emplace(e, kLeaf);
       }
     }
 
     for (size_t i = 0; i < inputs.size(); ++i) {
-      NodeEntry& e = inputs[i].entry_;
-      if (e.node.get() == nullptr) {
+      NodeEntry e;
+      auto ptr = inputs[i].ptr_.get();
+      if (array_to_entry.count(ptr)) {
+        e = array_to_entry.at(ptr);
+      } else {
         e.node = Node::Create();
       }
       nn_node->inputs.emplace_back(e);
