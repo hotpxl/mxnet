@@ -36,7 +36,7 @@ class AutogradRuntime;
 
 namespace minpy {
 class ImperativeRuntime;
-};
+};  // namespace minpy
 
 /*!
  * \brief ndarray interface

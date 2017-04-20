@@ -6,6 +6,8 @@
 #include <mxnet/minpy.h>
 #include <cassert>
 #include <cstdio>
+#include <map>
+#include <vector>
 #include "../c_api/c_api_ndarray.h"
 
 namespace mxnet {
@@ -18,10 +20,75 @@ void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
   std::printf("Strict evaluating \"%s\".\n", record.op->name.c_str());
   PushFCompute(record.delayed_function, record.op, record.attrs, record.ctx,
                record.read_vars, record.write_vars, record.requested,
-               record.ndinputs, record.ndoutputs);
+               record.inputs, record.outputs);
 }
 
 }  // anonymous namespace
+
+class ImperativeRuntime::JITGraph final {
+ public:
+  JITGraph(std::vector<ImperativeRuntime::ComputingRecord> const& jit_sequence);
+  bool operator==(JITGraph const& other) const;
+
+ private:
+  std::unordered_map<std::size_t, TShape> array_shapes_{};
+  struct Record {
+    nnvm::NodeAttrs attrs;
+    std::vector<std::size_t> inputs;
+    std::vector<std::size_t> outputs;
+
+    bool operator==(Record const& other) const;
+  };  // struct Record
+  std::vector<Record> records_{};
+};  // class ImperativeRuntime::JITGraph
+
+bool ImperativeRuntime::JITGraph::Record::operator==(Record const& other) const {
+  return attrs.op == other.attrs.op && attrs.scalars == other.attrs.scalars &&
+         attrs.dict == other.attrs.dict && inputs == other.inputs &&
+         outputs == other.outputs;
+}
+
+ImperativeRuntime::JITGraph::JITGraph(
+    std::vector<ImperativeRuntime::ComputingRecord> const& jit_sequence) {
+  std::size_t id_counter = 0;
+  std::unordered_map<NDArray::Chunk*, std::size_t> array_to_id{};
+
+  for (auto&& record : jit_sequence) {
+    std::vector<std::size_t> inputs;
+    std::vector<std::size_t> outputs;
+    for (auto&& input : record.inputs) {
+      std::size_t id;
+      auto ptr = input.ptr_.get();
+      auto it = array_to_id.find(ptr);
+      if (it == array_to_id.end()) {
+        id = id_counter++;
+        array_to_id.insert(std::make_pair(ptr, id));
+        array_shapes_.insert(std::make_pair(id, input.shape()));
+      } else {
+        id = it->second;
+      }
+      inputs.push_back(id);
+    }
+    for (auto&& output : record.outputs) {
+      std::size_t id;
+      auto ptr = output.ptr_.get();
+      auto it = array_to_id.find(ptr);
+      if (it == array_to_id.end()) {
+        id = id_counter++;
+        array_to_id.insert(std::make_pair(ptr, id));
+        array_shapes_.insert(std::make_pair(id, output.shape()));
+      } else {
+        id = it->second;
+      }
+      outputs.push_back(id);
+    }
+    records_.push_back({record.attrs, std::move(inputs), std::move(outputs)});
+  }
+}
+
+bool ImperativeRuntime::JITGraph::operator==(JITGraph const& rhs) const {
+  return array_shapes_ == rhs.array_shapes_ && records_ == rhs.records_;
+}
 
 ImperativeRuntime* ImperativeRuntime::Get() {
   static ImperativeRuntime r{};
@@ -78,10 +145,10 @@ void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
 }
 
 void ImperativeRuntime::FlushJITSequence() {
-  JitGraph *new_graph = new JitGraph(jit_sequence_);
+  JITGraph* new_graph = new JITGraph(jit_sequence_);
   bool graph_matched = false;
   for (auto&& graph : jit_graphs_)
-    if (graph->EqualGraph(*new_graph)) {
+    if (*graph == *new_graph) {
       graph_matched = true;
       break;
     }
@@ -92,7 +159,7 @@ void ImperativeRuntime::FlushJITSequence() {
     std::printf("Compare Graph Result: Match a prev graph :-)\n");
 
   typedef bool EntryState;
-  const EntryState kLeaf  = true;
+  const EntryState kLeaf = true;
   const EntryState kInner = false;
   using nnvm::Node;
   using nnvm::NodePtr;
@@ -101,15 +168,15 @@ void ImperativeRuntime::FlushJITSequence() {
   static int node_count = 0;
   nnvm::NodeEntryMap<EntryState> entry_state;
   for (auto&& record : jit_sequence_) {
-    std::vector<NDArray>& ndinputs  = record.ndinputs;
-    std::vector<NDArray>& ndoutputs = record.ndoutputs;
+    std::vector<NDArray>& inputs = record.inputs;
+    std::vector<NDArray>& outputs = record.outputs;
 
     NodePtr nn_node = Node::Create();
     nn_node->attrs = record.attrs;
     nn_node->attrs.name = "agnode_" + std::to_string(node_count++);
 
-    for (size_t i = 0; i < ndoutputs.size(); ++i) {
-      NodeEntry& e = ndoutputs[i].entry_;
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      NodeEntry& e = outputs[i].entry_;
       e = NodeEntry{nn_node, static_cast<uint32_t>(i), 0};
 
       if (!entry_state.count(e)) {
@@ -117,8 +184,8 @@ void ImperativeRuntime::FlushJITSequence() {
       }
     }
 
-    for (size_t i = 0; i < ndinputs.size(); ++i) {
-      NodeEntry& e = ndinputs[i].entry_;
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      NodeEntry& e = inputs[i].entry_;
       if (e.node.get() == nullptr) {
         e.node = Node::Create();
       }
@@ -141,81 +208,6 @@ void ImperativeRuntime::FlushJITSequence() {
   sym.Print(std::cout);
 
   jit_sequence_.clear();
-}
-
-void ImperativeRuntime::JitGraph::BuildGraph() {
-  static const size_t UNMATCHID = 0;
-  size_t output_cnt = UNMATCHID + 1;
-
-  for (auto&& record : jit_sequence_) {
-
-    // TODO(Haoran): It might fail if one ndarray is used as the outputs for multiple ops
-    for (auto&& input : record.ndinputs) {
-      auto it = ndoutputs_map_.find(reinterpret_cast<size_t>(input.ptr_.get()));
-      ndinputs_id_.emplace_back((it != ndoutputs_map_.end())? it->second : UNMATCHID);
-    }
-
-    for (auto&& output : record.ndoutputs) {
-      ndoutputs_map_.insert(std::pair<size_t, size_t>(
-            reinterpret_cast<size_t>(output.ptr_.get()), output_cnt));
-      ++output_cnt;
-    }
-  }
-}
-
-bool ImperativeRuntime::JitGraph::EqualGraph(const JitGraph& rhs)const {
-  std::printf("Compare Graph: Start Graph Compare\n");
-  auto &lhs = *this;
-
-  // Compare JIT sequence length
-  if (lhs.jit_sequence_.size() != rhs.jit_sequence_.size()) {
-    std::printf("Reason of Failure: Jit Length Not Equal\n");
-    return false;
-  }
-
-  size_t input_cnt = 0;
-  // Compare Each ComputingRecord
-  for (size_t i = 0; i < jit_sequence_.size(); ++i) {
-    // Check Op Name
-    if (lhs.jit_sequence_[i].op->name.compare(rhs.jit_sequence_[i].op->name) != 0) {
-      std::printf("Reason of Failure: Different Op Name\n");
-      return false;
-    }
-
-    auto &lhs_ndinputs = lhs.jit_sequence_[i].ndinputs,
-         &lhs_ndoutputs = lhs.jit_sequence_[i].ndoutputs,
-         &rhs_ndinputs = rhs.jit_sequence_[i].ndinputs,
-         &rhs_ndoutputs = rhs.jit_sequence_[i].ndoutputs;
-
-    // Compare Inputs & Outputs Size
-    if (lhs_ndinputs.size() != rhs_ndinputs.size()
-        || lhs_ndoutputs.size() != rhs_ndoutputs.size()) {
-      std::printf("Reason of Failure: Diff input or output size \n");
-      return false;
-    }
-
-    // Compare Inputs shape & ID
-    for (size_t j = 0; j < lhs_ndinputs.size(); ++j) {
-      if (lhs_ndinputs[j].shape() != rhs_ndinputs[j].shape()) {
-        std::printf("Reason of Failure: Mismatch input shape\n");
-        return false;
-      }
-      if (lhs.ndinputs_id_[input_cnt] != rhs.ndinputs_id_[input_cnt]) {
-        std::printf("Reason of Failure: Diff input ID\n");
-        return false;
-      }
-      ++input_cnt;
-    }
-
-    // Compare Outputs shape
-    for (size_t j = 0; j < lhs_ndoutputs.size(); ++j)
-      if (lhs_ndoutputs[j].shape() != rhs_ndoutputs[j].shape()) {
-        std::printf("Reason of Failure: Mismatch Output shape\n");
-        return false;
-      }
-  }
-
-  return true;
 }
 
 // void ImperativeRuntime:: ::FlushAutogradSequence() {

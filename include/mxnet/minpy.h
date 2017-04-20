@@ -6,9 +6,9 @@
 #ifndef MXNET_MINPY_H_
 #define MXNET_MINPY_H_
 
+#include <map>
 #include <memory>
 #include <vector>
-#include <map>
 #include "./op_attr_types.h"
 
 // extern "C" {
@@ -52,25 +52,8 @@ class ImperativeRuntime final {
     std::vector<engine::VarHandle> read_vars;
     std::vector<engine::VarHandle> write_vars;
     std::vector<Resource> requested;
-    std::vector<NDArray> ndinputs;
-    std::vector<NDArray> ndoutputs;
-  };
-
-  class JitGraph {
-   public:
-    JitGraph(const std::vector<ImperativeRuntime::ComputingRecord> &jit_sequence)
-      :ndoutputs_map_{}, ndinputs_id_{}, jit_sequence_{jit_sequence} {
-      BuildGraph();
-    }
-    virtual ~JitGraph() = default;
-
-    void BuildGraph();
-    bool EqualGraph(const JitGraph&)const;
-
-   private:
-    std::map<size_t, size_t> ndoutputs_map_;
-    std::vector<size_t> ndinputs_id_;
-    std::vector<ImperativeRuntime::ComputingRecord> jit_sequence_;
+    std::vector<NDArray> inputs;
+    std::vector<NDArray> outputs;
   };
 
   void Invoke(ComputingRecord record);
@@ -95,12 +78,11 @@ class ImperativeRuntime final {
   // std::vector<ComputingRecord> autograd_sequence_{};
   std::vector<ComputingRecord> jit_sequence_{};
 
-  // TODO(Haoran): should replace with smart ptr
-  // However, using smart ptr would fail (Delete some NDarray that is already freed)
-  std::vector<JitGraph*> jit_graphs_{};
+  class JITGraph;
+  std::vector<std::shared_ptr<JITGraph>> jit_graphs_{};
 
   bool jit_enabled_ = false;
-  bool autograd_enabled_ = false;
+  // bool autograd_enabled_ = false;
 };  // class ImperativeRuntime
 
 }  // namespace minpy
