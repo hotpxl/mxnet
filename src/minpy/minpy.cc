@@ -23,6 +23,21 @@ void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
                record.inputs, record.outputs);
 }
 
+nnvm::Symbol CompileToSymbol(
+    std::vector<ImperativeRuntime::ComputingRecord> const* computing_records) {
+  // TODO(ziheng)
+}
+
+void RunCompiledSymbol(nnvm::Symbol symbol, std::vector<NDArray>* arrays) {
+  // TODO(ziheng)
+  // The order of arrays, is the same as the original computing_records. namely
+  // {record[0].inputs, record[0].outputs, record[1].inputs, record[1].outputs,
+  // ...}
+  // For now, just compute output for leave nodes.
+  // TODO(yutian): Ignore memory allocation for now. I'm still thinking about
+  // the correct way to do it.
+}
+
 }  // anonymous namespace
 
 class ImperativeRuntime::JITGraph final {
