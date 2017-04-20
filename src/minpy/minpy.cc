@@ -110,7 +110,7 @@ void ImperativeRuntime::FlushJITSequence() {
 
     for (size_t i = 0; i < ndoutputs.size(); ++i) {
       NodeEntry& e = ndoutputs[i].entry_;
-      e = NodeEntry{nn_node, i, 0};
+      e = NodeEntry{nn_node, static_cast<uint32_t>(i), 0};
 
       if (!entry_state.count(e)) {
         entry_state.emplace(e, kLeaf);
