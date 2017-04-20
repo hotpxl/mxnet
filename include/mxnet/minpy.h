@@ -27,7 +27,6 @@
 // int MXNDArrayWaitToWrite(NDArrayHandle handle);
 //}
 
-// TODO(yutian): record operator related information in sequence
 namespace mxnet {
 namespace minpy {
 
@@ -42,6 +41,8 @@ class ImperativeRuntime final {
   // void EnableAutograd();
   // void DisableAutograd();
   void StrictEvaluate();
+  // TODO(yutian): Mark as output.
+  void MarkAsOutput(NDArray*) {}
 
   struct ComputingRecord {
     using DelayedFunction = FCompute;
