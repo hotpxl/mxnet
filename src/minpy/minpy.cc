@@ -153,7 +153,7 @@ void ImperativeRuntime::RunCompiledSymbol(
       NodeEntry e = ndarray_entry_.at(ptr);
       if (idx.exist(e.node.get())) {
         uint32_t entry_id = idx.entry_id(e);
-        CopyFromTo(arr, &(exec->data_entry_[entry_id]));
+        exec->data_entry_[entry_id] = arr;
       }
     }
   }
