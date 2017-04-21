@@ -39,6 +39,10 @@ std::vector<NDArray> Run(exec::GraphExecutor* exec,
                          const nnvm::NodeEntryMap<NDArray>& feed_dict);
 }
 
+namespace minpy {
+class ImperativeRuntime;
+}
+
 namespace exec {
 
 using nnvm::Graph;
@@ -46,6 +50,7 @@ using nnvm::Graph;
 // graph executors
 class GraphExecutor : public Executor {
  public:
+  friend class minpy::ImperativeRuntime;
   friend GraphExecutor *autograd::Bind(nnvm::Symbol symbol,
                                        const nnvm::NodeEntryMap<TShape>& shapes,
                                        const nnvm::NodeEntryMap<Context>& ctxs,

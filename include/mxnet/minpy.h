@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include "./executor.h"
 #include "./op_attr_types.h"
 
 // extern "C" {
@@ -83,6 +84,12 @@ class ImperativeRuntime final {
   std::vector<std::shared_ptr<JITGraph>> jit_graphs_{};
 
   bool jit_enabled_ = false;
+
+  nnvm::Symbol symbol_;
+  Executor *exec_;
+  std::unordered_map<NDArray::Chunk*, nnvm::NodeEntry> ndarray_entry_;
+  nnvm::Symbol CompileToSymbol(std::vector<ComputingRecord> *computing_records);
+  void RunCompiledSymbol(Executor *exec, std::vector<NDArray> *arrays);
   // bool autograd_enabled_ = false;
 };  // class ImperativeRuntime
 

@@ -4,14 +4,21 @@
  * \brief MinPy.
  */
 #include <mxnet/minpy.h>
+#include <nnvm/graph.h>
 #include <cassert>
 #include <cstdio>
 #include <map>
 #include <vector>
 #include "../c_api/c_api_ndarray.h"
+#include "../executor/graph_executor.h"
 
 namespace mxnet {
 namespace minpy {
+
+using nnvm::Node;
+using nnvm::NodePtr;
+using nnvm::NodeEntry;
+using nnvm::NodeEntryMap;
 
 namespace {
 
@@ -23,22 +30,138 @@ void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
                record.inputs, record.outputs);
 }
 
-nnvm::Symbol CompileToSymbol(
-    std::vector<ImperativeRuntime::ComputingRecord> const* computing_records) {
-  // TODO(ziheng)
-}
+Executor *BindSymbol(Symbol symbol,
+                     const NodeEntryMap<TShape>&  shapes,
+                     const NodeEntryMap<Context>& ctxs) {
+  std::vector<NodePtr> input_nodes =
+    symbol.ListInputs(Symbol::ListInputOption::kAll);
 
-void RunCompiledSymbol(nnvm::Symbol symbol, std::vector<NDArray>* arrays) {
-  // TODO(ziheng)
-  // The order of arrays, is the same as the original computing_records. namely
-  // {record[0].inputs, record[0].outputs, record[1].inputs, record[1].outputs,
-  // ...}
-  // For now, just compute output for leave nodes.
-  // TODO(yutian): Ignore memory allocation for now. I'm still thinking about
-  // the correct way to do it.
+  size_t input_size = input_nodes.size();
+  std::vector<NDArray> inputs;
+  inputs.reserve(input_size);
+  std::vector<NDArray> grads;
+  grads.reserve(input_size);
+  std::vector<OpReqType> grad_reqs;
+  grad_reqs.reserve(input_size);
+
+  // prepare inputs and set grad for every input
+  for (size_t i = 0; i < input_size; ++i) {
+    NodeEntry e = NodeEntry{input_nodes[i], 0, 0};
+    if (shapes.count(e) && ctxs.count(e)) {
+      TShape  shape = shapes.at(e);
+      Context ctx   = ctxs.at(e);
+      inputs.emplace_back(shape, ctx);
+      NDArray grad(shape, ctx);
+      grad = static_cast<real_t>(1.0);
+      grads.emplace_back(grad);
+      grad_reqs.emplace_back(OpReqType::kWriteTo);
+    } else {
+      LOG(FATAL) << "no corresponding ndarray: "
+                 << input_nodes[i]->attrs.name << "(0)";
+    }
+  }
+
+  // default context, assuming use the same context
+  CHECK_GT(ctxs.size(), 0)
+    << "The size of context mapping should be greater than zero";
+  Context ctx = ctxs.begin()->second;
+
+  std::map<std::string, Context> ctx_map;
+  std::vector<NDArray> aux_states;
+
+  return Executor::Bind(symbol, ctx, ctx_map, inputs, grads, grad_reqs, aux_states);
 }
 
 }  // anonymous namespace
+
+nnvm::Symbol ImperativeRuntime::CompileToSymbol(
+    std::vector<ComputingRecord> *computing_records) {
+  typedef bool EntryState;
+  const EntryState kLeaf = true;
+  const EntryState kInner = false;
+
+  static int node_count = 0;
+  NodeEntryMap<EntryState> entry_state;
+  NodeEntryMap<NDArray>    entry_ndarray;
+  for (auto&& record : *computing_records) {
+    std::vector<NDArray>& inputs = record.inputs;
+    std::vector<NDArray>& outputs = record.outputs;
+
+    NodePtr nn_node = Node::Create();
+    nn_node->attrs = record.attrs;
+    nn_node->attrs.name = "agnode_" + std::to_string(node_count++);
+
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      NodeEntry e{nn_node, static_cast<uint32_t>(i), 0};
+      ndarray_entry_.insert({outputs[i].ptr_.get(), e});
+      if (!entry_state.count(e)) {
+        entry_state.emplace(e, kLeaf);
+      }
+      entry_ndarray.insert({e, outputs[i]});
+    }
+
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      NodeEntry e;
+      NDArray::Chunk* ptr = inputs[i].ptr_.get();
+      if (ndarray_entry_.count(ptr)) {
+        e = ndarray_entry_.at(ptr);
+      } else {
+        e.node = Node::Create();
+      }
+      nn_node->inputs.emplace_back(e);
+      entry_state[e] = kInner;
+      entry_ndarray.insert({e, inputs[i]});
+    }
+  }
+
+  std::vector<NodeEntry> graph_outputs;
+  for (auto& kv : entry_state) {
+    if (kv.second == kLeaf) {
+      graph_outputs.emplace_back(kv.first);
+    }
+  }
+
+  nnvm::Symbol sym;
+  sym.outputs = graph_outputs;
+  sym.Print(std::cout);
+
+  NodeEntryMap<TShape>  shapes;
+  NodeEntryMap<Context> ctxs;
+  for (const auto& kv : entry_ndarray) {
+    shapes.insert({kv.first, kv.second.shape()});
+    ctxs.insert({kv.first, kv.second.ctx()});
+  }
+
+  exec_ = BindSymbol(sym, shapes, ctxs);
+  return sym;
+}
+
+// The order of arrays, is the same as the original computing_records. namely
+// {record[0].inputs, record[0].outputs, record[1].inputs, record[1].outputs,
+// ...}
+// For now, just compute output for leave nodes.
+// TODO(yutian): Ignore memory allocation for now. I'm still thinking about
+// the correct way to do it.
+void ImperativeRuntime::RunCompiledSymbol(
+    Executor *executor, std::vector<NDArray>* arrays) {
+  exec::GraphExecutor *exec = static_cast<exec::GraphExecutor*>(executor);
+  const nnvm::IndexedGraph& idx = exec->graph_.indexed_graph();
+
+  for (const NDArray& arr: *arrays) {
+    NDArray::Chunk* ptr = arr.ptr_.get();
+    if (ndarray_entry_.count(ptr)) {
+      NodeEntry e = ndarray_entry_.at(ptr);
+      if (idx.exist(e.node.get())) {
+        uint32_t entry_id = idx.entry_id(e);
+        CopyFromTo(arr, &(exec->data_entry_[entry_id]));
+      }
+    }
+  }
+  exec->Forward(false);
+  // return exec->outputs();
+  // or copy it to outputs ndarray
+}
+
 
 class ImperativeRuntime::JITGraph final {
  public:
@@ -172,58 +295,6 @@ void ImperativeRuntime::FlushJITSequence() {
     jit_graphs_.emplace_back(new_graph);
   } else
     std::printf("Compare Graph Result: Match a prev graph :-)\n");
-
-  typedef bool EntryState;
-  const EntryState kLeaf = true;
-  const EntryState kInner = false;
-  using nnvm::Node;
-  using nnvm::NodePtr;
-  using nnvm::NodeEntry;
-
-  static int node_count = 0;
-  nnvm::NodeEntryMap<EntryState> entry_state;
-  std::unordered_map<NDArray::Chunk*, NodeEntry> array_to_entry{};
-  for (auto&& record : jit_sequence_) {
-    std::vector<NDArray>& inputs = record.inputs;
-    std::vector<NDArray>& outputs = record.outputs;
-
-    NodePtr nn_node = Node::Create();
-    nn_node->attrs = record.attrs;
-    nn_node->attrs.name = "agnode_" + std::to_string(node_count++);
-
-    for (size_t i = 0; i < outputs.size(); ++i) {
-      NodeEntry e{nn_node, static_cast<uint32_t>(i), 0};
-      array_to_entry.insert({outputs[i].ptr_.get(), e});
-      if (!entry_state.count(e)) {
-        entry_state.emplace(e, kLeaf);
-      }
-    }
-
-    for (size_t i = 0; i < inputs.size(); ++i) {
-      NodeEntry e;
-      auto ptr = inputs[i].ptr_.get();
-      if (array_to_entry.count(ptr)) {
-        e = array_to_entry.at(ptr);
-      } else {
-        e.node = Node::Create();
-      }
-      nn_node->inputs.emplace_back(e);
-      entry_state[e] = kInner;
-    }
-
-    DoStrictEvaluation(std::move(record));
-  }
-
-  std::vector<NodeEntry> graph_outputs;
-  for (auto& kv : entry_state) {
-    if (kv.second == kLeaf) {
-      graph_outputs.emplace_back(kv.first);
-    }
-  }
-
-  nnvm::Symbol sym;
-  sym.outputs = graph_outputs;
-  sym.Print(std::cout);
 
   jit_sequence_.clear();
 }
