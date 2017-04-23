@@ -15,29 +15,24 @@
 namespace mxnet {
 namespace minpy {
 
-using nnvm::Node;
-using nnvm::NodePtr;
-using nnvm::NodeEntry;
-using nnvm::NodeEntryMap;
-
 namespace {
 
-std::unordered_map<NDArray::Chunk*, std::size_t> AssignRelativeOrderToArrays(
+std::unordered_map<Engine::VarHandle, std::size_t> AssignRelativeOrderToArrays(
     std::vector<ImperativeRuntime::ComputingRecord> const& sequence) {
   std::size_t id_counter = 0;
-  std::unordered_map<NDArray::Chunk*, std::size_t> ret{};
+  std::unordered_map<Engine::VarHandle, std::size_t> ret{};
   for (auto&& record : sequence) {
     for (auto&& input : record.inputs) {
-      auto ptr = input.ptr_.get();
+      auto ptr = input.var();
       auto it = ret.find(ptr);
       if (it == ret.end()) {
         ret.insert(std::make_pair(ptr, id_counter++));
       }
     }
     for (auto&& output : record.outputs) {
-      auto ptr = output.ptr_.get();
+      auto ptr = output.var();
       auto it = ret.find(ptr);
-      if (it == rec.end()) {
+      if (it == ret.end()) {
         ret.insert(std::make_pair(ptr, id_counter++));
       }
     }
@@ -53,12 +48,12 @@ void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
                record.inputs, record.outputs);
 }
 
-Executor* BindSymbol(Symbol symbol, const NodeEntryMap<TShape>& shapes,
-                     const NodeEntryMap<Context>& ctxs) {
-  std::vector<NodePtr> input_nodes =
+Executor* BindSymbol(Symbol symbol, nnvm::NodeEntryMap<TShape> const& shapes,
+                     nnvm::NodeEntryMap<Context> const& ctxs) {
+  std::vector<nnvm::NodePtr> input_nodes =
       symbol.ListInputs(Symbol::ListInputOption::kAll);
 
-  size_t input_size = input_nodes.size();
+  std::size_t input_size = input_nodes.size();
   std::vector<NDArray> inputs;
   inputs.reserve(input_size);
   std::vector<NDArray> grads;
@@ -67,8 +62,8 @@ Executor* BindSymbol(Symbol symbol, const NodeEntryMap<TShape>& shapes,
   grad_reqs.reserve(input_size);
 
   // prepare inputs and set grad for every input
-  for (size_t i = 0; i < input_size; ++i) {
-    NodeEntry e = NodeEntry{input_nodes[i], 0, 0};
+  for (std::size_t i = 0; i < input_size; ++i) {
+    nnvm::NodeEntry e = nnvm::NodeEntry{input_nodes[i], 0, 0};
     if (shapes.count(e) && ctxs.count(e)) {
       TShape shape = shapes.at(e);
       Context ctx = ctxs.at(e);
@@ -95,95 +90,7 @@ Executor* BindSymbol(Symbol symbol, const NodeEntryMap<TShape>& shapes,
                         aux_states);
 }
 
-nnvm::Symbol CompileToSymbol(
-    std::vector<ImperativeRuntime::ComputingRecord>* computing_records) {
-  using EntryState = bool;
-  constexpr EntryState const kLeaf = true;
-  constexpr EntryState const kInner = false;
-
-  static int node_count = 0;
-  NodeEntryMap<EntryState> entry_state;
-  NodeEntryMap<NDArray> entry_ndarray;
-  for (auto&& record : *computing_records) {
-    std::vector<NDArray>& inputs = record.inputs;
-    std::vector<NDArray>& outputs = record.outputs;
-
-    NodePtr nn_node = Node::Create();
-    nn_node->attrs = record.attrs;
-    nn_node->attrs.name = "jit_node_" + std::to_string(node_count++);
-
-    for (size_t i = 0; i < outputs.size(); ++i) {
-      NodeEntry e{nn_node, static_cast<uint32_t>(i), 0};
-      ndarray_entry_.insert({outputs[i].ptr_.get(), e});
-      if (!entry_state.count(e)) {
-        entry_state.emplace(e, kLeaf);
-      }
-      entry_ndarray.insert({e, outputs[i]});
-    }
-
-    for (size_t i = 0; i < inputs.size(); ++i) {
-      NodeEntry e;
-      NDArray::Chunk* ptr = inputs[i].ptr_.get();
-      if (ndarray_entry_.count(ptr)) {
-        e = ndarray_entry_.at(ptr);
-      } else {
-        e.node = Node::Create();
-      }
-      nn_node->inputs.emplace_back(e);
-      entry_state[e] = kInner;
-      entry_ndarray.insert({e, inputs[i]});
-    }
-  }
-
-  std::vector<NodeEntry> graph_outputs;
-  for (auto& kv : entry_state) {
-    if (kv.second == kLeaf) {
-      graph_outputs.emplace_back(kv.first);
-    }
-  }
-
-  nnvm::Symbol sym;
-  sym.outputs = graph_outputs;
-  sym.Print(std::cout);
-
-  NodeEntryMap<TShape> shapes;
-  NodeEntryMap<Context> ctxs;
-  for (const auto& kv : entry_ndarray) {
-    shapes.insert({kv.first, kv.second.shape()});
-    ctxs.insert({kv.first, kv.second.ctx()});
-  }
-
-  Executor* exec_ = BindSymbol(sym, shapes, ctxs);
-  return sym;
-}
-
 }  // anonymous namespace
-
-// The order of arrays, is the same as the original computing_records. namely
-// {record[0].inputs, record[0].outputs, record[1].inputs, record[1].outputs,
-// ...}
-// For now, just compute output for leave nodes.
-// TODO(yutian): Ignore memory allocation for now. I'm still thinking about
-// the correct way to do it.
-void ImperativeRuntime::RunCompiledSymbol(Executor* executor,
-                                          std::vector<NDArray>* arrays) {
-  exec::GraphExecutor* exec = static_cast<exec::GraphExecutor*>(executor);
-  const nnvm::IndexedGraph& idx = exec->graph_.indexed_graph();
-
-  for (const NDArray& arr : *arrays) {
-    NDArray::Chunk* ptr = arr.ptr_.get();
-    if (ndarray_entry_.count(ptr)) {
-      NodeEntry e = ndarray_entry_.at(ptr);
-      if (idx.exist(e.node.get())) {
-        uint32_t entry_id = idx.entry_id(e);
-        exec->data_entry_[entry_id] = arr;
-      }
-    }
-  }
-  exec->Forward(false);
-  // return exec->outputs();
-  // or copy it to outputs ndarray
-}
 
 class ImperativeRuntime::JITGraph final {
  public:
@@ -211,36 +118,19 @@ bool ImperativeRuntime::JITGraph::Record::operator==(
 
 ImperativeRuntime::JITGraph::JITGraph(
     std::vector<ImperativeRuntime::ComputingRecord> const& jit_sequence) {
-  std::size_t id_counter = 0;
-  std::unordered_map<NDArray::Chunk*, std::size_t> array_to_id{};
+  auto array_to_id = AssignRelativeOrderToArrays(jit_sequence);
 
   for (auto&& record : jit_sequence) {
     std::vector<std::size_t> inputs;
     std::vector<std::size_t> outputs;
     for (auto&& input : record.inputs) {
-      std::size_t id;
-      auto ptr = input.ptr_.get();
-      auto it = array_to_id.find(ptr);
-      if (it == array_to_id.end()) {
-        id = id_counter++;
-        array_to_id.insert(std::make_pair(ptr, id));
-        array_shapes_.insert(std::make_pair(id, input.shape()));
-      } else {
-        id = it->second;
-      }
+      std::size_t id = array_to_id.at(input.var());
+      array_shapes_[id] = input.shape();
       inputs.push_back(id);
     }
     for (auto&& output : record.outputs) {
-      std::size_t id;
-      auto ptr = output.ptr_.get();
-      auto it = array_to_id.find(ptr);
-      if (it == array_to_id.end()) {
-        id = id_counter++;
-        array_to_id.insert(std::make_pair(ptr, id));
-        array_shapes_.insert(std::make_pair(id, output.shape()));
-      } else {
-        id = it->second;
-      }
+      std::size_t id = array_to_id.at(output.var());
+      array_shapes_[id] = output.shape();
       outputs.push_back(id);
     }
     records_.push_back({record.attrs, std::move(inputs), std::move(outputs)});
@@ -320,6 +210,106 @@ void ImperativeRuntime::FlushJITSequence() {
     std::printf("Compare Graph Result: Match a prev graph :-)\n");
 
   jit_sequence_.clear();
+}
+
+ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
+    std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence) {
+  using EntryState = bool;
+  constexpr EntryState const kLeaf = true;
+  constexpr EntryState const kInner = false;
+  auto array_to_id = AssignRelativeOrderToArrays(*jit_sequence);
+  std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node{};
+
+  static int node_count = 0;
+  nnvm::NodeEntryMap<EntryState> entry_state;
+  nnvm::NodeEntryMap<NDArray> entry_array;
+  for (auto&& record : *jit_sequence) {
+    std::vector<NDArray>& inputs = record.inputs;
+    std::vector<NDArray>& outputs = record.outputs;
+
+    nnvm::NodePtr nn_node = nnvm::Node::Create();
+    nn_node->attrs = record.attrs;
+    nn_node->attrs.name = "jit_node_" + std::to_string(node_count++);
+
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      nnvm::NodeEntry e{nn_node, static_cast<std::uint32_t>(i), 0};
+      array_id_to_node[array_to_id[outputs[i].var()]] = e;
+      if (!entry_state.count(e)) {
+        entry_state.insert({e, kLeaf});
+      }
+      entry_array.insert({e, outputs[i]});
+    }
+
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      nnvm::NodeEntry e;
+      auto it = array_id_to_node.find(array_to_id[inputs[i].var()]);
+      if (it == array_id_to_node.end()) {
+        e.node = nnvm::Node::Create();
+      } else {
+        e = it->second;
+      }
+      nn_node->inputs.push_back(e);
+      entry_state[e] = kInner;
+      entry_array.insert({e, inputs[i]});
+    }
+  }
+
+  std::vector<nnvm::NodeEntry> graph_outputs;
+  for (auto& kv : entry_state) {
+    if (kv.second == kLeaf) {
+      graph_outputs.push_back(kv.first);
+    }
+  }
+
+  nnvm::Symbol symbol;
+  symbol.outputs = graph_outputs;
+  // TODO(yutian): Debug.
+  symbol.Print(std::cout);
+
+  nnvm::NodeEntryMap<TShape> shapes;
+  nnvm::NodeEntryMap<Context> ctxs;
+  for (auto const& kv : entry_array) {
+    shapes.insert({kv.first, kv.second.shape()});
+    ctxs.insert({kv.first, kv.second.ctx()});
+  }
+
+  Executor* exec = BindSymbol(symbol, shapes, ctxs);
+  return {symbol, exec, std::move(array_id_to_node)};
+}
+
+void ImperativeRuntime::RunCompiledSymbol(
+    CompiledSymbol compiled_symbol,
+    std::vector<ComputingRecord>* jit_sequence) {
+  exec::GraphExecutor* exec =
+      static_cast<exec::GraphExecutor*>(compiled_symbol.executor);
+  nnvm::IndexedGraph const& idx = exec->graph_.indexed_graph();
+  auto array_id_to_node = AssignRelativeOrderToArrays(*jit_sequence);
+
+  for (auto&& record : *jit_sequence) {
+    for (auto&& input : record.inputs) {
+      auto id = array_id_to_node[input.var()];
+      auto it = compiled_symbol.array_id_to_node.find(id);
+      if (it != compiled_symbol.array_id_to_node.end()) {
+        auto entry = it->second;
+        if (idx.exist(entry.node.get())) {
+          auto entry_id = idx.entry_id(entry);
+          exec->data_entry_[entry_id] = input;
+        }
+      }
+    }
+    for (auto&& output : record.outputs) {
+      auto id = array_id_to_node[output.var()];
+      auto it = compiled_symbol.array_id_to_node.find(id);
+      if (it != compiled_symbol.array_id_to_node.end()) {
+        auto entry = it->second;
+        if (idx.exist(entry.node.get())) {
+          auto entry_id = idx.entry_id(entry);
+          exec->data_entry_[entry_id] = output;
+        }
+      }
+    }
+  }
+  exec->Forward(false);
 }
 
 // void ImperativeRuntime:: ::FlushAutogradSequence() {

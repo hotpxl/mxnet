@@ -85,10 +85,15 @@ class ImperativeRuntime final {
 
   bool jit_enabled_ = false;
 
-  nnvm::Symbol symbol_;
-  Executor* exec_;
-  std::unordered_map<NDArray::Chunk*, nnvm::NodeEntry> ndarray_entry_;
-  void RunCompiledSymbol(Executor* exec, std::vector<NDArray>* arrays);
+  struct CompiledSymbol {
+    nnvm::Symbol symbol;
+    Executor* executor;
+    std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
+  };  // struct CompiledSymbol
+  CompiledSymbol CompileToSymbol(
+      std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence);
+  void RunCompiledSymbol(CompiledSymbol compiled_symbol,
+                         std::vector<ComputingRecord>* jit_sequence);
   // bool autograd_enabled_ = false;
 };  // class ImperativeRuntime
 

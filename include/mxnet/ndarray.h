@@ -29,10 +29,6 @@
 
 namespace mxnet {
 
-namespace minpy {
-class ImperativeRuntime;
-};  // namespace minpy
-
 // forward declaration
 namespace autograd {
 class AGNode;
@@ -374,7 +370,6 @@ class NDArray {
 
  private:
   friend class autograd::AutogradRuntime;
-  friend class minpy::ImperativeRuntime;
   /*! \brief the real data chunk that backs NDArray */
   struct Chunk {
     /*! \brief storage handlefrom storage engine */
@@ -569,7 +564,7 @@ void SamplePoisson(real_t lambda, NDArray *out);
 /*!
  * \brief Sample negative binomial distribution for each elements of out.
  * \param k failure limit
- * \param p success probability 
+ * \param p success probability
  * \param out output NDArray.
  */
 void SampleNegBinomial(int32_t k, real_t p, NDArray *out);
