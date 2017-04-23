@@ -22,6 +22,29 @@ using nnvm::NodeEntryMap;
 
 namespace {
 
+std::unordered_map<NDArray::Chunk*, std::size_t> AssignRelativeOrderToArrays(
+    std::vector<ImperativeRuntime::ComputingRecord> const& sequence) {
+  std::size_t id_counter = 0;
+  std::unordered_map<NDArray::Chunk*, std::size_t> ret{};
+  for (auto&& record : sequence) {
+    for (auto&& input : record.inputs) {
+      auto ptr = input.ptr_.get();
+      auto it = ret.find(ptr);
+      if (it == ret.end()) {
+        ret.insert(std::make_pair(ptr, id_counter++));
+      }
+    }
+    for (auto&& output : record.outputs) {
+      auto ptr = output.ptr_.get();
+      auto it = ret.find(ptr);
+      if (it == rec.end()) {
+        ret.insert(std::make_pair(ptr, id_counter++));
+      }
+    }
+  }
+  return ret;
+}
+
 // Call underlying functin in the old way.
 void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
   std::printf("Strict evaluating \"%s\".\n", record.op->name.c_str());
@@ -30,11 +53,10 @@ void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
                record.inputs, record.outputs);
 }
 
-Executor *BindSymbol(Symbol symbol,
-                     const NodeEntryMap<TShape>&  shapes,
+Executor* BindSymbol(Symbol symbol, const NodeEntryMap<TShape>& shapes,
                      const NodeEntryMap<Context>& ctxs) {
   std::vector<NodePtr> input_nodes =
-    symbol.ListInputs(Symbol::ListInputOption::kAll);
+      symbol.ListInputs(Symbol::ListInputOption::kAll);
 
   size_t input_size = input_nodes.size();
   std::vector<NDArray> inputs;
@@ -48,48 +70,47 @@ Executor *BindSymbol(Symbol symbol,
   for (size_t i = 0; i < input_size; ++i) {
     NodeEntry e = NodeEntry{input_nodes[i], 0, 0};
     if (shapes.count(e) && ctxs.count(e)) {
-      TShape  shape = shapes.at(e);
-      Context ctx   = ctxs.at(e);
+      TShape shape = shapes.at(e);
+      Context ctx = ctxs.at(e);
       inputs.emplace_back(shape, ctx);
       NDArray grad(shape, ctx);
       grad = static_cast<real_t>(1.0);
       grads.emplace_back(grad);
       grad_reqs.emplace_back(OpReqType::kWriteTo);
     } else {
-      LOG(FATAL) << "no corresponding ndarray: "
-                 << input_nodes[i]->attrs.name << "(0)";
+      LOG(FATAL) << "no corresponding ndarray: " << input_nodes[i]->attrs.name
+                 << "(0)";
     }
   }
 
   // default context, assuming use the same context
   CHECK_GT(ctxs.size(), 0)
-    << "The size of context mapping should be greater than zero";
+      << "The size of context mapping should be greater than zero";
   Context ctx = ctxs.begin()->second;
 
   std::map<std::string, Context> ctx_map;
   std::vector<NDArray> aux_states;
 
-  return Executor::Bind(symbol, ctx, ctx_map, inputs, grads, grad_reqs, aux_states);
+  return Executor::Bind(symbol, ctx, ctx_map, inputs, grads, grad_reqs,
+                        aux_states);
 }
 
-}  // anonymous namespace
-
-nnvm::Symbol ImperativeRuntime::CompileToSymbol(
-    std::vector<ComputingRecord> *computing_records) {
-  typedef bool EntryState;
-  const EntryState kLeaf = true;
-  const EntryState kInner = false;
+nnvm::Symbol CompileToSymbol(
+    std::vector<ImperativeRuntime::ComputingRecord>* computing_records) {
+  using EntryState = bool;
+  constexpr EntryState const kLeaf = true;
+  constexpr EntryState const kInner = false;
 
   static int node_count = 0;
   NodeEntryMap<EntryState> entry_state;
-  NodeEntryMap<NDArray>    entry_ndarray;
+  NodeEntryMap<NDArray> entry_ndarray;
   for (auto&& record : *computing_records) {
     std::vector<NDArray>& inputs = record.inputs;
     std::vector<NDArray>& outputs = record.outputs;
 
     NodePtr nn_node = Node::Create();
     nn_node->attrs = record.attrs;
-    nn_node->attrs.name = "agnode_" + std::to_string(node_count++);
+    nn_node->attrs.name = "jit_node_" + std::to_string(node_count++);
 
     for (size_t i = 0; i < outputs.size(); ++i) {
       NodeEntry e{nn_node, static_cast<uint32_t>(i), 0};
@@ -125,16 +146,18 @@ nnvm::Symbol ImperativeRuntime::CompileToSymbol(
   sym.outputs = graph_outputs;
   sym.Print(std::cout);
 
-  NodeEntryMap<TShape>  shapes;
+  NodeEntryMap<TShape> shapes;
   NodeEntryMap<Context> ctxs;
   for (const auto& kv : entry_ndarray) {
     shapes.insert({kv.first, kv.second.shape()});
     ctxs.insert({kv.first, kv.second.ctx()});
   }
 
-  exec_ = BindSymbol(sym, shapes, ctxs);
+  Executor* exec_ = BindSymbol(sym, shapes, ctxs);
   return sym;
 }
+
+}  // anonymous namespace
 
 // The order of arrays, is the same as the original computing_records. namely
 // {record[0].inputs, record[0].outputs, record[1].inputs, record[1].outputs,
@@ -142,12 +165,12 @@ nnvm::Symbol ImperativeRuntime::CompileToSymbol(
 // For now, just compute output for leave nodes.
 // TODO(yutian): Ignore memory allocation for now. I'm still thinking about
 // the correct way to do it.
-void ImperativeRuntime::RunCompiledSymbol(
-    Executor *executor, std::vector<NDArray>* arrays) {
-  exec::GraphExecutor *exec = static_cast<exec::GraphExecutor*>(executor);
+void ImperativeRuntime::RunCompiledSymbol(Executor* executor,
+                                          std::vector<NDArray>* arrays) {
+  exec::GraphExecutor* exec = static_cast<exec::GraphExecutor*>(executor);
   const nnvm::IndexedGraph& idx = exec->graph_.indexed_graph();
 
-  for (const NDArray& arr: *arrays) {
+  for (const NDArray& arr : *arrays) {
     NDArray::Chunk* ptr = arr.ptr_.get();
     if (ndarray_entry_.count(ptr)) {
       NodeEntry e = ndarray_entry_.at(ptr);
@@ -161,7 +184,6 @@ void ImperativeRuntime::RunCompiledSymbol(
   // return exec->outputs();
   // or copy it to outputs ndarray
 }
-
 
 class ImperativeRuntime::JITGraph final {
  public:
@@ -180,7 +202,8 @@ class ImperativeRuntime::JITGraph final {
   std::vector<Record> records_{};
 };  // class ImperativeRuntime::JITGraph
 
-bool ImperativeRuntime::JITGraph::Record::operator==(Record const& other) const {
+bool ImperativeRuntime::JITGraph::Record::operator==(
+    Record const& other) const {
   return attrs.op == other.attrs.op && attrs.scalars == other.attrs.scalars &&
          attrs.dict == other.attrs.dict && inputs == other.inputs &&
          outputs == other.outputs;
