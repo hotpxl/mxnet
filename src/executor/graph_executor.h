@@ -46,6 +46,7 @@ using nnvm::Graph;
 class GraphExecutor : public Executor {
  public:
   friend class autograd::AutogradRuntime;
+  friend class minpy::ImperativeRuntime;
   using Executor::MonitorCallback;
 
   virtual ~GraphExecutor();
