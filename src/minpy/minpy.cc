@@ -169,6 +169,7 @@ void ImperativeRuntime::DisableJIT() {
 // }
 
 void ImperativeRuntime::StrictEvaluate() {
+  printf("strict evaluate %d\n", jit_enabled_);
   if (jit_enabled_) {
     FlushJITSequence();
   }
@@ -196,19 +197,24 @@ void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
 }
 
 void ImperativeRuntime::FlushJITSequence() {
-  JITGraph* new_graph = new JITGraph(jit_sequence_);
-  bool graph_matched = false;
-  for (auto&& graph : jit_graphs_)
-    if (*graph == *new_graph) {
-      graph_matched = true;
+  auto new_graph = std::make_shared<JITGraph>(jit_sequence_);
+  std::shared_ptr<CompiledSymbol> compiled_symbol;
+  for (auto&& graph : jit_graphs_) {
+    if (*graph.first == *new_graph) {
+      compiled_symbol = graph.second;
       break;
     }
-  if (!graph_matched) {
-    std::printf("Compare Graph Result: Not match with any prev graph\n");
-    jit_graphs_.emplace_back(new_graph);
-  } else
-    std::printf("Compare Graph Result: Match a prev graph :-)\n");
-
+  }
+  std::printf("Compare graph result: %d.\n",
+              static_cast<bool>(compiled_symbol));
+  if (static_cast<bool>(compiled_symbol)) {
+    RunCompiledSymbol(compiled_symbol.get(), &jit_sequence_);
+  } else {
+    auto compiled_symbol =
+        std::make_shared<CompiledSymbol>(CompileToSymbol(&jit_sequence_));
+    jit_graphs_.emplace(new_graph, compiled_symbol);
+    RunCompiledSymbol(compiled_symbol.get(), &jit_sequence_);
+  }
   jit_sequence_.clear();
 }
 
@@ -278,18 +284,18 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
 }
 
 void ImperativeRuntime::RunCompiledSymbol(
-    CompiledSymbol compiled_symbol,
+    CompiledSymbol* compiled_symbol,
     std::vector<ComputingRecord>* jit_sequence) {
   exec::GraphExecutor* exec =
-      static_cast<exec::GraphExecutor*>(compiled_symbol.executor);
+      static_cast<exec::GraphExecutor*>(compiled_symbol->executor);
   nnvm::IndexedGraph const& idx = exec->graph_.indexed_graph();
   auto array_id_to_node = AssignRelativeOrderToArrays(*jit_sequence);
 
   for (auto&& record : *jit_sequence) {
     for (auto&& input : record.inputs) {
       auto id = array_id_to_node[input.var()];
-      auto it = compiled_symbol.array_id_to_node.find(id);
-      if (it != compiled_symbol.array_id_to_node.end()) {
+      auto it = compiled_symbol->array_id_to_node.find(id);
+      if (it != compiled_symbol->array_id_to_node.end()) {
         auto entry = it->second;
         if (idx.exist(entry.node.get())) {
           auto entry_id = idx.entry_id(entry);
@@ -299,8 +305,8 @@ void ImperativeRuntime::RunCompiledSymbol(
     }
     for (auto&& output : record.outputs) {
       auto id = array_id_to_node[output.var()];
-      auto it = compiled_symbol.array_id_to_node.find(id);
-      if (it != compiled_symbol.array_id_to_node.end()) {
+      auto it = compiled_symbol->array_id_to_node.find(id);
+      if (it != compiled_symbol->array_id_to_node.end()) {
         auto entry = it->second;
         if (idx.exist(entry.node.get())) {
           auto entry_id = idx.entry_id(entry);
@@ -308,8 +314,18 @@ void ImperativeRuntime::RunCompiledSymbol(
         }
       }
     }
+
+    // TODO(yutian)
+    for (auto&& input : record.inputs) {
+      input.CheckAndAlloc();
+    }
+    for (auto&& output : record.outputs) {
+      output.CheckAndAlloc();
+    }
   }
+  std::printf("running symbol\n");
   exec->Forward(false);
+  std::printf("running symbol complete\n");
 }
 
 // void ImperativeRuntime:: ::FlushAutogradSequence() {

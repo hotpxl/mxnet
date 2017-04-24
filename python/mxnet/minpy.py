@@ -22,7 +22,7 @@ class JITContext():
         base.check_call(base._LIB.MXJITMarkAsOutput(arr.handle))
 
 
-@contexlib.contextmanager
+@contextlib.contextmanager
 def jit():
     enable_jit()
     yield JITContext()

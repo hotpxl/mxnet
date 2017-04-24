@@ -81,18 +81,20 @@ class ImperativeRuntime final {
   std::vector<ComputingRecord> jit_sequence_{};
 
   class JITGraph;
-  std::vector<std::shared_ptr<JITGraph>> jit_graphs_{};
-
-  bool jit_enabled_ = false;
-
   struct CompiledSymbol {
     nnvm::Symbol symbol;
     Executor* executor;
     std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
   };  // struct CompiledSymbol
+
+  std::unordered_map<std::shared_ptr<JITGraph>, std::shared_ptr<CompiledSymbol>>
+      jit_graphs_{};
+
+  bool jit_enabled_ = false;
+
   CompiledSymbol CompileToSymbol(
       std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence);
-  void RunCompiledSymbol(CompiledSymbol compiled_symbol,
+  void RunCompiledSymbol(CompiledSymbol* compiled_symbol,
                          std::vector<ComputingRecord>* jit_sequence);
   // bool autograd_enabled_ = false;
 };  // class ImperativeRuntime
