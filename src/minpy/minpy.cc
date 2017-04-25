@@ -157,17 +157,6 @@ void ImperativeRuntime::DisableJIT() {
   jit_enabled_ = false;
 }
 
-// void ImperativeRuntime::EnableAutograd() {
-//   assert(!autograd_enabled_);
-//   autograd_enabled_ = true;
-// }
-
-// void ImperativeRuntime::DisableAutograd() {
-//   assert(autograd_enabled_);
-//   FlushGradSequence();
-//   autograd_enabled_ = false;
-// }
-
 void ImperativeRuntime::StrictEvaluate() {
   printf("strict evaluate %d\n", jit_enabled_);
   if (jit_enabled_) {
@@ -176,15 +165,8 @@ void ImperativeRuntime::StrictEvaluate() {
 }
 
 void ImperativeRuntime::Invoke(ComputingRecord record) {
-  // PushAutogradRecord(record);
   PushJITRecord(record);
 }
-
-// void ImperativeRuntime::PushAutogradRecord(ComputingRecord record) {
-//   if (autograd_enabled_) {
-//     autograd_seqeunce_.emplace_back(std::move(record));
-//   }
-// }
 
 void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
   if (jit_enabled_) {
@@ -327,14 +309,6 @@ void ImperativeRuntime::RunCompiledSymbol(
   exec->Forward(false);
   std::printf("running symbol complete\n");
 }
-
-// void ImperativeRuntime:: ::FlushAutogradSequence() {
-//   for (auto&& i : autograd_component_.Process(std::move(autograd_sequence_)))
-//   {
-//     PushJITSequence(std::move(i));
-//   }
-//   autograd_sequence_.clear();
-// }
 
 }  // namespace minpy
 }  // namespace mxnet

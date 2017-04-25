@@ -38,9 +38,6 @@ class ImperativeRuntime final {
   // Python-side utility functions.
   void EnableJIT();
   void DisableJIT();
-  // TODO(yutian): Reenable autograd interface.
-  // void EnableAutograd();
-  // void DisableAutograd();
   void StrictEvaluate();
   // TODO(yutian): Mark as output.
   void MarkAsOutput(NDArray*) {}
@@ -68,16 +65,9 @@ class ImperativeRuntime final {
   ImperativeRuntime& operator=(ImperativeRuntime const&) = delete;
   ImperativeRuntime& operator=(ImperativeRuntime&&) = delete;
 
-  // void PushAutogradRecord(ComputingRecord record);
   void PushJITRecord(ComputingRecord record);
   void FlushJITSequence();
 
-  // void FlushAutogradSequence();
-
-  // We own the following two components.
-  // AutogradComponent autograd_component_{};
-  // JITComponent jit_component_{};
-  // std::vector<ComputingRecord> autograd_sequence_{};
   std::vector<ComputingRecord> jit_sequence_{};
 
   class JITGraph;
@@ -96,7 +86,6 @@ class ImperativeRuntime final {
       std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence);
   void RunCompiledSymbol(CompiledSymbol* compiled_symbol,
                          std::vector<ComputingRecord>* jit_sequence);
-  // bool autograd_enabled_ = false;
 };  // class ImperativeRuntime
 
 }  // namespace minpy
