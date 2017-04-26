@@ -281,10 +281,18 @@ void ImperativeRuntime::RunCompiledSymbol(
         auto entry = it->second;
         if (idx.exist(entry.node.get())) {
           auto entry_id = idx.entry_id(entry);
-          exec->data_entry_[entry_id] = input;
+          CopyFromTo(input, &exec->data_entry_[entry_id]);
         }
       }
+      input.CheckAndAlloc();
     }
+  }
+
+  std::printf("running symbol\n");
+  exec->Forward(false);
+  std::printf("running symbol complete\n");
+
+  for (auto&& record : *jit_sequence) {
     for (auto&& output : record.outputs) {
       auto id = array_id_to_node[output.var()];
       auto it = compiled_symbol->array_id_to_node.find(id);
@@ -292,22 +300,12 @@ void ImperativeRuntime::RunCompiledSymbol(
         auto entry = it->second;
         if (idx.exist(entry.node.get())) {
           auto entry_id = idx.entry_id(entry);
-          exec->data_entry_[entry_id] = output;
+          CopyFromTo(exec->data_entry_[entry_id], &output);
         }
       }
-    }
-
-    // TODO(yutian)
-    for (auto&& input : record.inputs) {
-      input.CheckAndAlloc();
-    }
-    for (auto&& output : record.outputs) {
       output.CheckAndAlloc();
     }
   }
-  std::printf("running symbol\n");
-  exec->Forward(false);
-  std::printf("running symbol complete\n");
 }
 
 }  // namespace minpy
