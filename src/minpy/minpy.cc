@@ -56,7 +56,7 @@ AssignRelativeOrderToArrays(
 
 // Call underlying functin in the old way.
 void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
-  std::printf("Strict evaluating \"%s\".\n", record.op->name.c_str());
+  std::fprintf(stderr, "Strict evaluating \"%s\".\n", record.op->name.c_str());
   PushFCompute(record.delayed_function, record.op, record.attrs, record.ctx,
                record.read_vars, record.write_vars, record.requested,
                record.inputs, record.outputs);
@@ -172,7 +172,6 @@ void ImperativeRuntime::DisableJIT() {
 }
 
 void ImperativeRuntime::StrictEvaluate() {
-  printf("strict evaluate %d\n", jit_enabled_);
   if (jit_enabled_) {
     FlushJITSequence();
   }
@@ -185,7 +184,8 @@ void ImperativeRuntime::Invoke(ComputingRecord record) {
 void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
   if (jit_enabled_) {
     // Save for lazy evaluation.
-    std::printf("Save \"%s\" for lazy evaluation.\n", record.op->name.c_str());
+    std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",
+                 record.op->name.c_str());
     jit_sequence_.emplace_back(std::move(record));
   } else {
     DoStrictEvaluation(std::move(record));
@@ -204,8 +204,8 @@ void ImperativeRuntime::FlushJITSequence() {
       break;
     }
   }
-  std::printf("Compare graph result: %d.\n",
-              static_cast<bool>(compiled_symbol));
+  std::fprintf(stderr, "Compare graph result: %d.\n",
+               static_cast<bool>(compiled_symbol));
   if (static_cast<bool>(compiled_symbol)) {
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   } else {
@@ -234,14 +234,17 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
     nn_node->attrs = record.attrs;
     nn_node->attrs.name = "jit_node_" + std::to_string(node_count++);
 
-    for (size_t i = 0; i < inputs.size(); ++i) {
+    for (std::size_t i = 0; i < inputs.size(); ++i) {
       nnvm::NodeEntry e;
       auto id = array_to_id.at(inputs[i]);
       auto it = array_id_to_node.find(id);
       if (it == array_id_to_node.end()) {
         e.node = nnvm::Node::Create();
+        e.index = 0;
+        e.version = 0;
         input_array_ids.emplace(id);
         node_to_array.emplace(e, inputs[i]);
+        array_id_to_node.emplace(id, e);
       } else {
         e = it->second;
       }
@@ -249,11 +252,11 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
       output_array_ids.erase(id);
     }
 
-    for (size_t i = 0; i < outputs.size(); ++i) {
+    for (std::size_t i = 0; i < outputs.size(); ++i) {
       nnvm::NodeEntry e{nn_node, static_cast<std::uint32_t>(i), 0};
       auto id = array_to_id.at(outputs[i]);
       assert(array_id_to_node.count(id) == 0);
-      array_id_to_node[id] = e;
+      array_id_to_node.emplace(id, e);
       output_array_ids.emplace(id);
       node_to_array.emplace(e, outputs[i]);
     }
@@ -267,7 +270,7 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
   nnvm::Symbol symbol;
   symbol.outputs = graph_outputs;
   // TODO(yutian): Debug.
-  symbol.Print(std::cout);
+  // symbol.Print(std::cout);
 
   nnvm::NodeEntryMap<TShape> shapes;
   nnvm::NodeEntryMap<Context> ctxs;
@@ -298,9 +301,9 @@ void ImperativeRuntime::RunCompiledSymbol(
     }
   }
 
-  std::printf("Running symbol.\n");
+  // std::printf("Running symbol.\n");
   exec->Forward(false);
-  std::printf("Running symbol complete.\n");
+  // std::printf("Running symbol complete.\n");
 
   for (auto&& p : array_to_id) {
     auto id = p.second;
