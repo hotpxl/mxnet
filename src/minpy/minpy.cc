@@ -7,6 +7,7 @@
 #include <nnvm/graph.h>
 #include <cassert>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <vector>
 #include "../c_api/c_api_ndarray.h"
@@ -17,23 +18,36 @@ namespace minpy {
 
 namespace {
 
-std::unordered_map<Engine::VarHandle, std::size_t> AssignRelativeOrderToArrays(
+// Empty NDArray is explicitly not handled here. They should not be used and
+// will cause an immediate segmentation fault.
+struct NDArrayHash {
+  std::size_t operator()(NDArray const& a) const {
+    return std::hash<Engine::VarHandle>()(a.var());
+  }
+};  // struct NDArrayHash
+
+struct NDArrayEqual {
+  bool operator()(NDArray const& a, NDArray const& b) const {
+    return a.var() == b.var();
+  }
+};  // struct NDArrayEqual
+
+std::unordered_map<NDArray, std::size_t, NDArrayHash, NDArrayEqual>
+AssignRelativeOrderToArrays(
     std::vector<ImperativeRuntime::ComputingRecord> const& sequence) {
   std::size_t id_counter = 0;
-  std::unordered_map<Engine::VarHandle, std::size_t> ret{};
+  std::unordered_map<NDArray, std::size_t, NDArrayHash, NDArrayEqual> ret{};
   for (auto&& record : sequence) {
     for (auto&& input : record.inputs) {
-      auto ptr = input.var();
-      auto it = ret.find(ptr);
+      auto it = ret.find(input);
       if (it == ret.end()) {
-        ret.insert(std::make_pair(ptr, id_counter++));
+        ret.insert(std::make_pair(input, id_counter++));
       }
     }
     for (auto&& output : record.outputs) {
-      auto ptr = output.var();
-      auto it = ret.find(ptr);
+      auto it = ret.find(output);
       if (it == ret.end()) {
-        ret.insert(std::make_pair(ptr, id_counter++));
+        ret.insert(std::make_pair(output, id_counter++));
       }
     }
   }
@@ -61,7 +75,7 @@ Executor* BindSymbol(Symbol symbol, nnvm::NodeEntryMap<TShape> const& shapes,
   std::vector<OpReqType> grad_reqs;
   grad_reqs.reserve(input_size);
 
-  // prepare inputs and set grad for every input
+  // Prepare inputs and set grad for every input.
   for (std::size_t i = 0; i < input_size; ++i) {
     nnvm::NodeEntry e = nnvm::NodeEntry{input_nodes[i], 0, 0};
     if (shapes.count(e) && ctxs.count(e)) {
@@ -73,14 +87,14 @@ Executor* BindSymbol(Symbol symbol, nnvm::NodeEntryMap<TShape> const& shapes,
       grads.emplace_back(grad);
       grad_reqs.emplace_back(OpReqType::kWriteTo);
     } else {
-      LOG(FATAL) << "no corresponding ndarray: " << input_nodes[i]->attrs.name
-                 << "(0)";
+      LOG(FATAL) << "No corresponding NDArray: " << input_nodes[i]->attrs.name
+                 << "(0).";
     }
   }
 
   // default context, assuming use the same context
   CHECK_GT(ctxs.size(), 0)
-      << "The size of context mapping should be greater than zero";
+      << "The size of context mapping should be greater than zero.";
   Context ctx = ctxs.begin()->second;
 
   std::map<std::string, Context> ctx_map;
@@ -124,12 +138,12 @@ ImperativeRuntime::JITGraph::JITGraph(
     std::vector<std::size_t> inputs;
     std::vector<std::size_t> outputs;
     for (auto&& input : record.inputs) {
-      std::size_t id = array_to_id.at(input.var());
+      std::size_t id = array_to_id.at(input);
       array_shapes_[id] = input.shape();
       inputs.push_back(id);
     }
     for (auto&& output : record.outputs) {
-      std::size_t id = array_to_id.at(output.var());
+      std::size_t id = array_to_id.at(output);
       array_shapes_[id] = output.shape();
       outputs.push_back(id);
     }
@@ -190,63 +204,61 @@ void ImperativeRuntime::FlushJITSequence() {
   std::printf("Compare graph result: %d.\n",
               static_cast<bool>(compiled_symbol));
   if (static_cast<bool>(compiled_symbol)) {
-    RunCompiledSymbol(compiled_symbol.get(), &jit_sequence_);
+    RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   } else {
     auto compiled_symbol =
         std::make_shared<CompiledSymbol>(CompileToSymbol(&jit_sequence_));
     jit_graphs_.emplace(new_graph, compiled_symbol);
-    RunCompiledSymbol(compiled_symbol.get(), &jit_sequence_);
+    RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   }
   jit_sequence_.clear();
 }
 
 ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
     std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence) {
-  using EntryState = bool;
-  constexpr EntryState const kLeaf = true;
-  constexpr EntryState const kInner = false;
   auto array_to_id = AssignRelativeOrderToArrays(*jit_sequence);
-  std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node{};
 
+  std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
   static int node_count = 0;
-  nnvm::NodeEntryMap<EntryState> entry_state;
-  nnvm::NodeEntryMap<NDArray> entry_array;
+  std::set<std::size_t> input_array_ids;
+  std::set<std::size_t> output_array_ids;
+  nnvm::NodeEntryMap<NDArray> node_to_array;
   for (auto&& record : *jit_sequence) {
-    std::vector<NDArray>& inputs = record.inputs;
-    std::vector<NDArray>& outputs = record.outputs;
+    auto&& inputs = record.inputs;
+    auto&& outputs = record.outputs;
 
     nnvm::NodePtr nn_node = nnvm::Node::Create();
     nn_node->attrs = record.attrs;
     nn_node->attrs.name = "jit_node_" + std::to_string(node_count++);
 
-    for (size_t i = 0; i < outputs.size(); ++i) {
-      nnvm::NodeEntry e{nn_node, static_cast<std::uint32_t>(i), 0};
-      array_id_to_node[array_to_id[outputs[i].var()]] = e;
-      if (!entry_state.count(e)) {
-        entry_state.insert({e, kLeaf});
-      }
-      entry_array.insert({e, outputs[i]});
-    }
-
     for (size_t i = 0; i < inputs.size(); ++i) {
       nnvm::NodeEntry e;
-      auto it = array_id_to_node.find(array_to_id[inputs[i].var()]);
+      auto id = array_to_id.at(inputs[i]);
+      auto it = array_id_to_node.find(id);
       if (it == array_id_to_node.end()) {
         e.node = nnvm::Node::Create();
+        input_array_ids.emplace(id);
+        node_to_array.emplace(e, inputs[i]);
       } else {
         e = it->second;
       }
-      nn_node->inputs.push_back(e);
-      entry_state[e] = kInner;
-      entry_array.insert({e, inputs[i]});
+      nn_node->inputs.emplace_back(e);
+      output_array_ids.erase(id);
+    }
+
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      nnvm::NodeEntry e{nn_node, static_cast<std::uint32_t>(i), 0};
+      auto id = array_to_id.at(outputs[i]);
+      assert(array_id_to_node.count(id) == 0);
+      array_id_to_node[id] = e;
+      output_array_ids.emplace(id);
+      node_to_array.emplace(e, outputs[i]);
     }
   }
 
   std::vector<nnvm::NodeEntry> graph_outputs;
-  for (auto& kv : entry_state) {
-    if (kv.second == kLeaf) {
-      graph_outputs.push_back(kv.first);
-    }
+  for (auto&& id : output_array_ids) {
+    graph_outputs.emplace_back(array_id_to_node.at(id));
   }
 
   nnvm::Symbol symbol;
@@ -256,54 +268,44 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
 
   nnvm::NodeEntryMap<TShape> shapes;
   nnvm::NodeEntryMap<Context> ctxs;
-  for (auto const& kv : entry_array) {
-    shapes.insert({kv.first, kv.second.shape()});
-    ctxs.insert({kv.first, kv.second.ctx()});
+  for (auto&& kv : node_to_array) {
+    shapes.emplace(kv.first, kv.second.shape());
+    ctxs.emplace(kv.first, kv.second.ctx());
   }
 
   Executor* exec = BindSymbol(symbol, shapes, ctxs);
-  return {symbol, exec, std::move(array_id_to_node)};
+  return {symbol, exec, std::move(array_id_to_node), std::move(input_array_ids),
+          std::move(output_array_ids)};
 }
 
 void ImperativeRuntime::RunCompiledSymbol(
-    CompiledSymbol* compiled_symbol,
+    std::shared_ptr<CompiledSymbol> compiled_symbol,
     std::vector<ComputingRecord>* jit_sequence) {
   exec::GraphExecutor* exec =
       static_cast<exec::GraphExecutor*>(compiled_symbol->executor);
   nnvm::IndexedGraph const& idx = exec->graph_.indexed_graph();
-  auto array_id_to_node = AssignRelativeOrderToArrays(*jit_sequence);
+  auto array_to_id = AssignRelativeOrderToArrays(*jit_sequence);
 
-  for (auto&& record : *jit_sequence) {
-    for (auto&& input : record.inputs) {
-      auto id = array_id_to_node[input.var()];
-      auto it = compiled_symbol->array_id_to_node.find(id);
-      if (it != compiled_symbol->array_id_to_node.end()) {
-        auto entry = it->second;
-        if (idx.exist(entry.node.get())) {
-          auto entry_id = idx.entry_id(entry);
-          CopyFromTo(input, &exec->data_entry_[entry_id]);
-        }
-      }
-      input.CheckAndAlloc();
+  for (auto&& p : array_to_id) {
+    auto id = p.second;
+    auto&& array = p.first;
+    if (compiled_symbol->input_array_ids.count(id) != 0) {
+      auto&& node = compiled_symbol->array_id_to_node.at(id);
+      CopyFromTo(array, &exec->data_entry_.at(idx.entry_id(node)));
     }
   }
 
-  std::printf("running symbol\n");
+  std::printf("Running symbol.\n");
   exec->Forward(false);
-  std::printf("running symbol complete\n");
+  std::printf("Running symbol complete.\n");
 
-  for (auto&& record : *jit_sequence) {
-    for (auto&& output : record.outputs) {
-      auto id = array_id_to_node[output.var()];
-      auto it = compiled_symbol->array_id_to_node.find(id);
-      if (it != compiled_symbol->array_id_to_node.end()) {
-        auto entry = it->second;
-        if (idx.exist(entry.node.get())) {
-          auto entry_id = idx.entry_id(entry);
-          CopyFromTo(exec->data_entry_[entry_id], &output);
-        }
-      }
-      output.CheckAndAlloc();
+  for (auto&& p : array_to_id) {
+    auto id = p.second;
+    auto array = p.first;
+    if (compiled_symbol->output_array_ids.count(id) != 0) {
+      array.CheckAndAlloc();
+      auto&& node = compiled_symbol->array_id_to_node.at(id);
+      CopyFromTo(exec->data_entry_.at(idx.entry_id(node)), &array);
     }
   }
 }

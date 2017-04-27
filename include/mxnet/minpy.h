@@ -75,6 +75,8 @@ class ImperativeRuntime final {
     nnvm::Symbol symbol;
     Executor* executor;
     std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
+    std::set<std::size_t> input_array_ids;
+    std::set<std::size_t> output_array_ids;
   };  // struct CompiledSymbol
 
   std::unordered_map<std::shared_ptr<JITGraph>, std::shared_ptr<CompiledSymbol>>
@@ -84,7 +86,7 @@ class ImperativeRuntime final {
 
   CompiledSymbol CompileToSymbol(
       std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence);
-  void RunCompiledSymbol(CompiledSymbol* compiled_symbol,
+  void RunCompiledSymbol(std::shared_ptr<CompiledSymbol> compiled_symbol,
                          std::vector<ComputingRecord>* jit_sequence);
 };  // class ImperativeRuntime
 
