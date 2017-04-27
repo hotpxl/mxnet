@@ -19,9 +19,9 @@ MXNET_DLL int MXDisableJIT() {
   API_END();
 }
 
-MXNET_DLL int MXMarkAsOutput(NDArrayHandle handle) {
+MXNET_DLL int MXJITMarkAsOutput(NDArrayHandle handle) {
   API_BEGIN();
   mxnet::minpy::ImperativeRuntime::Get()->MarkAsOutput(
-      static_cast<NDArray*>(handle));
+      *static_cast<NDArray*>(handle));
   API_END();
 }

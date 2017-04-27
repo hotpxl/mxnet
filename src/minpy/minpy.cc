@@ -177,6 +177,11 @@ void ImperativeRuntime::StrictEvaluate() {
   }
 }
 
+void ImperativeRuntime::MarkAsOutput(NDArray const& array) {
+  assert(jit_enabled_);
+  extra_outputs_.push_back(array);
+}
+
 void ImperativeRuntime::Invoke(ComputingRecord record) {
   PushJITRecord(record);
 }
@@ -209,16 +214,18 @@ void ImperativeRuntime::FlushJITSequence() {
   if (static_cast<bool>(compiled_symbol)) {
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   } else {
-    auto compiled_symbol =
-        std::make_shared<CompiledSymbol>(CompileToSymbol(&jit_sequence_));
+    auto compiled_symbol = std::make_shared<CompiledSymbol>(
+        CompileToSymbol(&jit_sequence_, extra_outputs_));
     jit_graphs_.emplace(new_graph, compiled_symbol);
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   }
   jit_sequence_.clear();
+  extra_outputs_.clear();
 }
 
 ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
-    std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence) {
+    std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence,
+    std::vector<NDArray> const& extra_outputs) {
   auto array_to_id = AssignRelativeOrderToArrays(*jit_sequence);
 
   std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
@@ -261,7 +268,10 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
       node_to_array.emplace(e, outputs[i]);
     }
   }
-
+  for (auto&& array : extra_outputs) {
+    auto id = array_to_id.at(array);
+    output_array_ids.emplace(id);
+  }
   std::vector<nnvm::NodeEntry> graph_outputs;
   for (auto&& id : output_array_ids) {
     graph_outputs.emplace_back(array_id_to_node.at(id));
