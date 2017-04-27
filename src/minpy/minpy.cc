@@ -193,6 +193,9 @@ void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
 }
 
 void ImperativeRuntime::FlushJITSequence() {
+  if (jit_sequence_.empty()) {
+    return;
+  }
   auto new_graph = std::make_shared<JITGraph>(jit_sequence_);
   std::shared_ptr<CompiledSymbol> compiled_symbol;
   for (auto&& graph : jit_graphs_) {
