@@ -39,8 +39,7 @@ class ImperativeRuntime final {
   void EnableJIT();
   void DisableJIT();
   void StrictEvaluate();
-  // TODO(yutian): Mark as output.
-  void MarkAsOutput(NDArray*) {}
+  void MarkAsOutput(NDArray const& array);
 
   struct ComputingRecord {
     using DelayedFunction = FCompute;
@@ -69,12 +68,15 @@ class ImperativeRuntime final {
   void FlushJITSequence();
 
   std::vector<ComputingRecord> jit_sequence_{};
+  std::vector<NDArray> extra_outputs_{};
 
   class JITGraph;
   struct CompiledSymbol {
     nnvm::Symbol symbol;
     Executor* executor;
     std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
+    std::set<std::size_t> input_array_ids;
+    std::set<std::size_t> output_array_ids;
   };  // struct CompiledSymbol
 
   std::unordered_map<std::shared_ptr<JITGraph>, std::shared_ptr<CompiledSymbol>>
@@ -82,10 +84,11 @@ class ImperativeRuntime final {
 
   bool jit_enabled_ = false;
 
-  CompiledSymbol CompileToSymbol(
-      std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence);
-  void RunCompiledSymbol(CompiledSymbol* compiled_symbol,
-                         std::vector<ComputingRecord>* jit_sequence);
+  static CompiledSymbol CompileToSymbol(
+      std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence,
+      std::vector<NDArray> const& extra_outputs);
+  static void RunCompiledSymbol(std::shared_ptr<CompiledSymbol> compiled_symbol,
+                                std::vector<ComputingRecord>* jit_sequence);
 };  // class ImperativeRuntime
 
 }  // namespace minpy

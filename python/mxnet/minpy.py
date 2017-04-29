@@ -18,7 +18,7 @@ def disable_jit():
 
 
 class JITContext():
-    def mark_as_output(arr):
+    def mark_as_output(self, arr):
         base.check_call(base._LIB.MXJITMarkAsOutput(arr.handle))
 
 

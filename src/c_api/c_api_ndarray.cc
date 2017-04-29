@@ -250,7 +250,6 @@ void PushFCompute(const FCompute& fn,
         input_blobs.push_back(i.data());
       }
       for (auto& i : ndoutputs) {
-        i.CheckAndAlloc();
         output_blobs.push_back(i.data());
       }
       OpContext opctx{is_train, rctx,
@@ -297,7 +296,6 @@ void PushOperator(std::shared_ptr<Operator> opr,
         }
       }
       for (auto& i : ndoutputs) {
-        i.CheckAndAlloc();
         output_blobs.push_back(i.data());
       }
       Capture* capture = new Capture({on_complete, opr});
