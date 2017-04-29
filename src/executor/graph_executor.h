@@ -169,6 +169,8 @@ class GraphExecutor : public Executor {
   std::vector<CachedSegOpr> cached_seg_opr_;
 };
 
+nnvm::NodeEntry AggregateGradient(std::vector<nnvm::NodeEntry>&& v);
+
 }  // namespace exec
 }  // namespace mxnet
 #endif  // MXNET_EXECUTOR_GRAPH_EXECUTOR_H_

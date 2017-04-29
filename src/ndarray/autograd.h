@@ -77,7 +77,12 @@ class AutogradRuntime {
                                 std::vector<NDArray>* p_inputs,
                                 std::vector<NDArray>* p_outputs);
   /*! \brief compute the gradient of outputs w.r.t variables. */
-  void ComputeGradient(const std::vector<NDArray>& outputs);
+  void ComputeGradient(const std::vector<NDArray>& outputs,
+                       const std::vector<NDArray>& grad_outputs);
+
+  std::vector<AGNodeEntry> CreateGradientGraph(
+      const std::vector<NDArray>& outputs);
+
   /*! \return AutogradRuntime singleton */
   static AutogradRuntime* Get();
   /*! \brief Get shared pointer reference to AutogradRuntime singleton.
