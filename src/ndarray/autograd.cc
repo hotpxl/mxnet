@@ -192,48 +192,55 @@ void AutogradRuntime::ComputeGradient(
   }
 }
 
-vector<AGNodeEntry> AutogradRuntime::CreateGradientGraph(
+AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
     const vector<NDArray>& outputs) {
   using namespace nnvm;
   // TODO(minjie): cached gradient graph.
   
+  unordered_set<NodePtr> forward_nodes;
+  NodeEntryMap<NDArray> feed_dict;
   // Convert the computation history to symbol.
   vector<AGNodeEntry> heads;
   Symbol sym;
-  for (const auto& i : outputs) {
-    CHECK(i.entry_.ag_node.get() != nullptr)
+  for (const NDArray& out : outputs) {
+    CHECK(out.entry_.ag_node.get() != nullptr)
       << "Cannot differentiate node because it doesn't have "
       << "computation history.";
-    heads.emplace_back(i.entry_);
-    sym.outputs.emplace_back(i.entry_.nn_entry());
+    heads.emplace_back(out.entry_);
+    sym.outputs.emplace_back(out.entry_.nn_entry());
+    feed_dict.insert({out.entry_.nn_entry(), out});
   }
 
   // TODO(minjie): Shape hints?
-  std::vector<AGNodePtr> arg_agnodes;
-    //, args_grad;
-  //std::vector<OpReqType> grad_reqs;
+  vector<AGNodePtr> var_agnodes;
   AGDFSVisit(heads, [&](const AGNodePtr& n) {
       if (n->nn_node->is_variable()) {
-        arg_agnodes.push_back(n);
-        //args.push_back(n->outputs[0]);
-        //args_grad.push_back(n->out_grads[0]);
-        //grad_reqs.push_back(n->grad_req);
+        var_agnodes.push_back(n);
       }
+      for (const AGNodeEntry& in_ent : n->inputs) {
+        feed_dict.insert({in_ent.nn_entry(),
+            in_ent.ag_node->outputs[in_ent.index]});
+      }
+      forward_nodes.insert(n->nn_node);
     });
-
 
   // Create head grad entries.
   vector<NodeEntry> head_grad_entries;
   for (size_t i = 0; i < outputs.size(); ++i) {
-    head_grad_entries.emplace_back(nnvm::Node::Create(), 0, 0);
-    // TODO(minjie): shape hints.
+    const NodeEntry grad_entry{nnvm::Node::Create(), 0, 0};
+    // Add attribute hints of the gradient entries of outputs
+    // to output entries.
+    head_grad_entries.emplace_back(exec::AttrHint(
+          grad_entry, outputs[i].entry_.nn_entry()));
   }
 
   // Extract argument entries.
   vector<NodeEntry> arg_entries;
-  for (const AGNodePtr& n : arg_agnodes) {
+  vector<AGNodePtr> arg_agnodes;
+  for (const AGNodePtr& n : var_agnodes) {
     if (n->grad_req != kNullOp) {
-      arg_entries.emplace_back(n->nn_node, 0, 0);
+      arg_agnodes.push_back(n);
+      arg_entries.emplace_back(NodeEntry{n->nn_node, 0, 0});
     }
   }
 
@@ -241,7 +248,7 @@ vector<AGNodeEntry> AutogradRuntime::CreateGradientGraph(
   zero_ops.push_back(nnvm::Op::Get("zeros_like"));
   zero_ops.push_back(nnvm::Op::Get("_zeros"));
 
-  // Take gradient
+  // Take gradient.
   Graph g;
   g.outputs = sym.outputs;
   g = nnvm::pass::Gradient(
@@ -253,10 +260,26 @@ vector<AGNodeEntry> AutogradRuntime::CreateGradientGraph(
       nullptr,                 // mirror_fun
       nullptr,                 // attr_hint_fun
       zero_ops);               // zero_ops
+  CHECK_EQ(g.outputs.size(), arg_entries.size());
+
+  // Bind output (arg_grad) entries to corresponding ndarrays.
+  for (size_t i = 0; i < g.outputs.size(); ++i) {
+    feed_dict.insert({g.outputs[i], arg_agnodes[i]->out_grads[0]});
+  }
 
   // Shape/Type inference.
+  const auto& idx = g.indexed_graph();
+  CHECK_EQ(idx.input_nodes().size(), var_agnodes.size());
+  nnvm::ShapeVector arg_shapes;
+  nnvm::DTypeVector arg_dtypes;
+  for (size_t i = 0; i < var_agnodes.size(); ++i) {
+    arg_shapes.push_back(var_agnodes[i]->outputs[0].shape());
+    arg_dtypes.push_back(var_agnodes[i]->outputs[0].dtype());
+  }
+  g = nnvm::pass::InferShape(g, arg_shapes, "__shape__");
+  g = nnvm::pass::InferType(g, arg_dtypes, "__dtype__");
   
-  // Attach arg grads to AGNode.
+  return {g, forward_nodes, feed_dict};
 }
 
 }  // namespace autograd

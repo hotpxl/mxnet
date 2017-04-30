@@ -541,10 +541,12 @@ MXNET_DLL int MXAutogradMarkVariables(mx_uint num_var,
  * \brief compute the gradient of outputs w.r.t variabels
  * \param num_output number of output NDArray
  * \param output_handles output NDArrays
+ * \param grad_output_handles output NDArrays
  * \return 0 when success, -1 when failure happens
  */
 MXNET_DLL int MXAutogradComputeGradient(mx_uint num_output,
-                                        NDArrayHandle* output_handles);
+                                        NDArrayHandle* output_handles,
+                                        NDArrayHandle* grad_output_handles);
 //--------------------------------------------
 // Part 3: symbolic configuration generation
 //--------------------------------------------

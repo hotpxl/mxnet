@@ -374,16 +374,16 @@ int MXImperativeInvoke(AtomicSymbolCreator creator,
     if (fn) {
       // TODO(yutian): Great. We have a FCompute here and we want to redirect it
       // to ImperativeRuntime to execute.
-      // if (AutogradRuntime::Get()->IsTraining()) {
-      //   AutogradRuntime::Get()->RecordImperativeFCompute(fn, op,
-      //       attrs, &ndinputs, &ndoutputs);
-      // }
-      // PushFCompute(fn, op, attrs, ctx, read_vars, write_vars,
-      //     requested, ndinputs, ndoutputs);
+      if (AutogradRuntime::Get()->IsTraining()) {
+        AutogradRuntime::Get()->RecordImperativeFCompute(fn, op,
+            attrs, &ndinputs, &ndoutputs);
+      }
+      PushFCompute(fn, op, attrs, ctx, read_vars, write_vars,
+          requested, ndinputs, ndoutputs);
       // TODO(yutian): Question. Is it safe to record op here? Answer(ziheng): Yes.
-      minpy::ImperativeRuntime::Get()->Invoke({fn, op, attrs, ctx, read_vars,
-                                               write_vars, requested, ndinputs,
-                                               ndoutputs});
+      //minpy::ImperativeRuntime::Get()->Invoke({fn, op, attrs, ctx, read_vars,
+                                               //write_vars, requested, ndinputs,
+                                               //ndoutputs});
     } else if (createop.count(op)) {
       std::shared_ptr<Operator> opr(
           createop[op](attrs, ctx, ret->arg_shapes, ret->arg_types));
@@ -443,17 +443,24 @@ int MXAutogradMarkVariables(mx_uint num_var,
 }
 
 int MXAutogradComputeGradient(mx_uint num_output,
-                              NDArrayHandle *output_handles) {
+                              NDArrayHandle *output_handles,
+                              NDArrayHandle *grad_output_handles) {
   API_BEGIN();
   MXAPIThreadLocalEntry *ret = MXAPIThreadLocalStore::Get();
 
-  std::vector<NDArray> outputs;
+  std::vector<NDArray> outputs, grad_outputs;
   outputs.reserve(num_output);
   for (mx_uint i = 0; i < num_output; ++i) {
     outputs.emplace_back(*static_cast<NDArray*>(output_handles[i]));
   }
+  if (grad_output_handles) {
+    grad_outputs.reserve(num_output);
+    for (mx_uint i = 0; i < num_output; ++i) {
+      grad_outputs.emplace_back(*static_cast<NDArray*>(grad_output_handles[i]));
+    }
+  }
 
-  AutogradRuntime::Get()->ComputeGradient(outputs);
+  AutogradRuntime::Get()->ComputeGradient(outputs, grad_outputs);
 
   API_END();
 }

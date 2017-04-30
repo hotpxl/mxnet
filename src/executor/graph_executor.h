@@ -169,6 +169,7 @@ class GraphExecutor : public Executor {
   std::vector<CachedSegOpr> cached_seg_opr_;
 };
 
+nnvm::NodeEntry AttrHint(nnvm::NodeEntry src, nnvm::NodeEntry like);
 nnvm::NodeEntry AggregateGradient(std::vector<nnvm::NodeEntry>&& v);
 
 }  // namespace exec

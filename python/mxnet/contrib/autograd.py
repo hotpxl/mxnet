@@ -100,24 +100,26 @@ def mark_variables(variables, gradients, grad_reqs='write'):
         c_array(mx_uint, grad_reqs),
         c_array(NDArrayHandle, gradient_handles)))
 
-def compute_gradient(outputs):
+def compute_gradient(outputs, grad_outputs=None):
     """Compute the gradients of outputs w.r.t variables.
 
     Parameters
     ----------
     outputs: list of NDArray
+      The target(output) ndarrays for gradient computation.
+    grad_outputs: list of NDArray
+      Optional gradient arrays of outputs. If none is given, arrays of value one will be used.
 
     Returns
     -------
     gradients: list of NDArray
     """
-    output_handles = []
-    for arr in outputs:
-        output_handles.append(arr.handle)
-
+    output_handles = c_array(NDArrayHandle, [arr.handle for arr in outputs])
+    grad_handles = None
+    if grad_outputs is not None:
+        grad_handles = c_array(NDArrayHandle, [arr.handle for arr in grad_outputs])
     check_call(_LIB.MXAutogradComputeGradient(
-        len(output_handles),
-        c_array(NDArrayHandle, output_handles)))
+        len(output_handles), output_handles, grad_handles))
 
 
 def grad_and_loss(func, argnum=None):
