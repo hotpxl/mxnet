@@ -52,7 +52,7 @@ class AutogradRuntime {
  public:
   struct AutogradGraph {
     nnvm::Graph graph;  // Graph that contains both forward and backward logics.
-    std::unordered_set<nnvm::NodePtr> forward_nodes;  // Set of forward ondes.
+    std::unordered_set<const nnvm::Node*> forward_nodes;  // Set of forward ondes.
     nnvm::NodeEntryMap<NDArray> feed_dict;  // Map from node entries to their NDArray storage.
   };
  public:
@@ -86,7 +86,8 @@ class AutogradRuntime {
   void ComputeGradient(const std::vector<NDArray>& outputs,
                        const std::vector<NDArray>& grad_outputs);
 
-  AutogradGraph CreateGradientGraph(const std::vector<NDArray>& outputs);
+  AutogradGraph CreateGradientGraph(const std::vector<NDArray>& outputs,
+                                    const std::vector<NDArray>& grad_outputs);
 
   /*! \return AutogradRuntime singleton */
   static AutogradRuntime* Get();

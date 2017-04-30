@@ -100,6 +100,7 @@ AGNodePtr AutogradRuntime::RecordOp(const nnvm::Op* op,
                                     std::vector<NDArray> *p_inputs,
                                     std::vector<NDArray> *p_outputs,
                                     const std::shared_ptr<Operator>& opr) {
+  LOG(INFO) << "Record op: " << ((op)? op->name : "null");
   std::vector<NDArray>& inputs  = *p_inputs;
   std::vector<NDArray>& outputs = *p_outputs;
 
@@ -193,11 +194,12 @@ void AutogradRuntime::ComputeGradient(
 }
 
 AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
-    const vector<NDArray>& outputs) {
+    const vector<NDArray>& outputs, const vector<NDArray>& grad_outputs) {
   using namespace nnvm;
+  const int kUnknownType = -1;
   // TODO(minjie): cached gradient graph.
   
-  unordered_set<NodePtr> forward_nodes;
+  unordered_set<const Node*> forward_nodes;
   NodeEntryMap<NDArray> feed_dict;
   // Convert the computation history to symbol.
   vector<AGNodeEntry> heads;
@@ -212,26 +214,41 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
   }
 
   // TODO(minjie): Shape hints?
+  unordered_map<const Node*, TShape> var_shape_hints;
+  unordered_map<const Node*, int> var_dtype_hints;
   vector<AGNodePtr> var_agnodes;
   AGDFSVisit(heads, [&](const AGNodePtr& n) {
       if (n->nn_node->is_variable()) {
         var_agnodes.push_back(n);
+        var_shape_hints.insert({n->nn_node.get(), n->outputs[0].shape()});
+        var_dtype_hints.insert({n->nn_node.get(), n->outputs[0].dtype()});
       }
       for (const AGNodeEntry& in_ent : n->inputs) {
         feed_dict.insert({in_ent.nn_entry(),
             in_ent.ag_node->outputs[in_ent.index]});
       }
-      forward_nodes.insert(n->nn_node);
+      forward_nodes.insert(n->nn_node.get());
     });
 
   // Create head grad entries.
   vector<NodeEntry> head_grad_entries;
   for (size_t i = 0; i < outputs.size(); ++i) {
-    const NodeEntry grad_entry{nnvm::Node::Create(), 0, 0};
+    NodePtr head_grad_node = Node::Create();
+    head_grad_node->attrs.name = "__head_grad" + std::to_string(i);
+    const NodeEntry grad_entry{head_grad_node, 0, 0};
     // Add attribute hints of the gradient entries of outputs
     // to output entries.
     head_grad_entries.emplace_back(exec::AttrHint(
           grad_entry, outputs[i].entry_.nn_entry()));
+    var_shape_hints.insert({head_grad_node.get(), outputs[i].shape()});
+    var_dtype_hints.insert({head_grad_node.get(), outputs[i].dtype()});
+  }
+  if (!grad_outputs.empty()) {
+    // Add gradient output arrays to the feed dictionary.
+    CHECK_EQ(head_grad_entries.size(), grad_outputs.size());
+    for (size_t i = 0; i < head_grad_entries.size(); ++i) {
+      feed_dict.insert({head_grad_entries[i], grad_outputs[i]});
+    }
   }
 
   // Extract argument entries.
@@ -267,14 +284,31 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
     feed_dict.insert({g.outputs[i], arg_agnodes[i]->out_grads[0]});
   }
 
-  // Shape/Type inference.
   const auto& idx = g.indexed_graph();
-  CHECK_EQ(idx.input_nodes().size(), var_agnodes.size());
-  nnvm::ShapeVector arg_shapes;
-  nnvm::DTypeVector arg_dtypes;
-  for (size_t i = 0; i < var_agnodes.size(); ++i) {
-    arg_shapes.push_back(var_agnodes[i]->outputs[0].shape());
-    arg_dtypes.push_back(var_agnodes[i]->outputs[0].dtype());
+  std::cout << ">>>>>Whole graph after gradient" << std::endl;
+  for (uint32_t nid = 0; nid < idx.num_nodes(); ++nid) {
+    const nnvm::Node* node = idx[nid].source;
+    std::cout << "Node #" << nid << ": " << node->attrs.name << " fwd?" << (forward_nodes.count(node) == 1);
+    if (!idx[nid].source->is_variable()) {
+      std::cout << " op: " << idx[nid].source->attrs.op->name;
+    }
+    std::cout << std::endl;
+  }
+  std::cout << "<<<<<Whole graph after gradient" << std::endl;
+
+  // Shape/Type inference.
+  const vector<uint32_t>& input_nodes = idx.input_nodes();
+  nnvm::ShapeVector arg_shapes(input_nodes.size(), TShape());
+  nnvm::DTypeVector arg_dtypes(input_nodes.size(), kUnknownType);
+  for (size_t i = 0; i < input_nodes.size(); ++i) {
+    const uint32_t nid = input_nodes[i];
+    const Node* node = idx[nid].source;
+    if (var_shape_hints.count(node)) {
+      arg_shapes[i] = var_shape_hints[node];
+    }
+    if (var_dtype_hints.count(node)) {
+      arg_dtypes[i] = var_dtype_hints[node];
+    }
   }
   g = nnvm::pass::InferShape(g, arg_shapes, "__shape__");
   g = nnvm::pass::InferType(g, arg_dtypes, "__dtype__");

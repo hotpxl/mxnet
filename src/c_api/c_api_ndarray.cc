@@ -460,7 +460,9 @@ int MXAutogradComputeGradient(mx_uint num_output,
     }
   }
 
-  AutogradRuntime::Get()->ComputeGradient(outputs, grad_outputs);
+  //AutogradRuntime::Get()->ComputeGradient(outputs, grad_outputs);
+
+  AutogradRuntime::Get()->CreateGradientGraph(outputs, grad_outputs);
 
   API_END();
 }
