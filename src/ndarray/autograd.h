@@ -15,10 +15,20 @@
 #include <nnvm/graph.h>
 #include <vector>
 #include <atomic>
+#include <tuple>
 #include <unordered_map>
 
 namespace mxnet {
 namespace autograd {
+
+struct NodeEntryCmp {
+  bool operator() (const nnvm::NodeEntry& lhs, const nnvm::NodeEntry& rhs) const {
+    return std::make_tuple(lhs.node.get(), lhs.index, lhs.version) <
+           std::make_tuple(rhs.node.get(), rhs.index, rhs.version);
+  }
+};
+using FeedDict = std::map<nnvm::NodeEntry, NDArray, NodeEntryCmp>;
+
 class AGNode {
  public:
   OpReqType grad_req;
@@ -53,7 +63,7 @@ class AutogradRuntime {
   struct AutogradGraph {
     nnvm::Graph graph;  // Graph that contains both forward and backward logics.
     std::unordered_set<const nnvm::Node*> forward_nodes;  // Set of forward ondes.
-    nnvm::NodeEntryMap<NDArray> feed_dict;  // Map from node entries to their NDArray storage.
+    FeedDict feed_dict;  // Map from node entries to their NDArray storage.
   };
  public:
   /*! \brief turn on or turn off operator recording for autograd. */

@@ -12,6 +12,7 @@
 #include <mxnet/op_attr_types.h>
 #include <nnvm/node.h>
 #include <nnvm/op_attr_types.h>
+#include <nnvm/graph_attr_types.h>
 #include <string>
 #include "./c_api_common.h"
 #include "../common/utils.h"
@@ -445,9 +446,13 @@ int MXAutogradMarkVariables(mx_uint num_var,
 int MXAutogradComputeGradient(mx_uint num_output,
                               NDArrayHandle *output_handles,
                               NDArrayHandle *grad_output_handles) {
+  static auto& fcpu = nnvm::Op::GetAttr<FCompute>("FCompute<cpu>");
+  static auto& fgpu = nnvm::Op::GetAttr<FCompute>("FCompute<gpu>");
+
   API_BEGIN();
   MXAPIThreadLocalEntry *ret = MXAPIThreadLocalStore::Get();
 
+  CHECK_GT(num_output, 0);
   std::vector<NDArray> outputs, grad_outputs;
   outputs.reserve(num_output);
   for (mx_uint i = 0; i < num_output; ++i) {
@@ -461,8 +466,71 @@ int MXAutogradComputeGradient(mx_uint num_output,
   }
 
   //AutogradRuntime::Get()->ComputeGradient(outputs, grad_outputs);
+  
+  // TODO(minjie): infer context.
+  const Context& ctx = outputs[0].ctx();
 
-  AutogradRuntime::Get()->CreateGradientGraph(outputs, grad_outputs);
+  auto&& aggraph = AutogradRuntime::Get()->CreateGradientGraph(outputs, grad_outputs);
+  auto&& feed_dict = aggraph.feed_dict;
+  const nnvm::ShapeVector& shapes = aggraph.graph.GetAttr<nnvm::ShapeVector>("shape");
+  const nnvm::DTypeVector& dtypes = aggraph.graph.GetAttr<nnvm::DTypeVector>("dtype");
+
+  // Execute backward graph.
+  const auto& idx = aggraph.graph.indexed_graph();
+  DFSVisit(aggraph.graph.outputs, [&] (const nnvm::NodePtr& node) {
+      const uint32_t nid = idx.node_id(node.get());
+      if (node->is_variable() || aggraph.forward_nodes.count(node.get())) {
+        // Forward nodes have already been executed.
+        return;
+      }
+
+      const nnvm::Op* op = CHECK_NOTNULL(node->attrs.op);
+
+      // Extract input/output ndarrays.
+      std::vector<NDArray> ndinputs, ndoutputs;
+      ndinputs.reserve(node->inputs.size());
+      ndoutputs.reserve(node->num_outputs());
+      for (uint32_t i = 0; i < node->inputs.size(); ++i) {
+        const nnvm::NodeEntry& in_ent = node->inputs[i];
+        const uint32_t in_ent_id = idx.entry_id(in_ent);
+        if (!feed_dict.count(in_ent)) {
+          // TODO(minjie): delay allocation
+          NDArray nd(shapes[in_ent_id], ctx, false, dtypes[in_ent_id]);
+          feed_dict.insert({in_ent, nd});
+        }
+        ndinputs.push_back(feed_dict[in_ent]);
+      }
+      for (uint32_t i = 0; i < node->num_outputs(); ++i) {
+        const nnvm::NodeEntry& out_ent = {node, i, 0};
+        const uint32_t out_ent_id = idx.entry_id(out_ent);
+        if (!feed_dict.count(out_ent)) {
+          // TODO(minjie): delay allocation
+          NDArray nd(shapes[out_ent_id], ctx, false, dtypes[out_ent_id]);
+          feed_dict.insert({out_ent, nd});
+        }
+        ndoutputs.push_back(feed_dict[out_ent]);
+      }
+
+      // Make read/write vars. Handle resource requests.
+      std::vector<engine::VarHandle> read_vars, write_vars;
+      std::vector<Resource> requested;
+      std::vector<uint32_t> auxidx;
+      SetDependency(&read_vars, &write_vars, &requested, &auxidx,
+          op, node->attrs, ctx, ndinputs, ndoutputs);
+
+      FCompute fn;
+      if (ctx.dev_mask() == cpu::kDevMask && fcpu.count(op)) {
+        fn = fcpu[op];
+      } else if (ctx.dev_mask() == gpu::kDevMask && fgpu.count(op)) {
+        fn = fgpu[op];
+      }
+      CHECK(fn != nullptr)
+        << "Currently only operators registered through FCompute is allowed."
+        << " No FCompute is registered for Operator \"" << op->name << "\".";
+
+      PushFCompute(fn, op, node->attrs, ctx, read_vars, write_vars,
+          requested, ndinputs, ndoutputs);
+    });
 
   API_END();
 }

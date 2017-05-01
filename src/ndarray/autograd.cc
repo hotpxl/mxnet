@@ -100,7 +100,6 @@ AGNodePtr AutogradRuntime::RecordOp(const nnvm::Op* op,
                                     std::vector<NDArray> *p_inputs,
                                     std::vector<NDArray> *p_outputs,
                                     const std::shared_ptr<Operator>& opr) {
-  LOG(INFO) << "Record op: " << ((op)? op->name : "null");
   std::vector<NDArray>& inputs  = *p_inputs;
   std::vector<NDArray>& outputs = *p_outputs;
 
@@ -137,7 +136,7 @@ void AutogradRuntime::ComputeGradient(
     const std::vector<NDArray>& grad_outputs) {
   std::vector<AGNodeEntry> heads;
   Symbol sym;
-  NodeEntryMap<NDArray> feed_dict;
+  nnvm::NodeEntryMap<NDArray> feed_dict;
   for (const auto& i : outputs) {
     CHECK(i.entry_.ag_node.get() != nullptr)
       << "Cannot differentiate node because it doesn't have "
@@ -162,7 +161,6 @@ void AutogradRuntime::ComputeGradient(
         feed_dict.insert({i.nn_entry(), i.ag_node->outputs[i.index]});
       }
     });
-
 
   if (args.size()) {
     std::map<std::string, Context> ctx_map;
@@ -199,8 +197,6 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
   const int kUnknownType = -1;
   // TODO(minjie): cached gradient graph.
   
-  unordered_set<const Node*> forward_nodes;
-  NodeEntryMap<NDArray> feed_dict;
   // Convert the computation history to symbol.
   vector<AGNodeEntry> heads;
   Symbol sym;
@@ -210,10 +206,10 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
       << "computation history.";
     heads.emplace_back(out.entry_);
     sym.outputs.emplace_back(out.entry_.nn_entry());
-    feed_dict.insert({out.entry_.nn_entry(), out});
   }
 
-  // TODO(minjie): Shape hints?
+  unordered_set<const Node*> forward_nodes;
+  FeedDict feed_dict;
   unordered_map<const Node*, TShape> var_shape_hints;
   unordered_map<const Node*, int> var_dtype_hints;
   vector<AGNodePtr> var_agnodes;
@@ -227,6 +223,11 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
         feed_dict.insert({in_ent.nn_entry(),
             in_ent.ag_node->outputs[in_ent.index]});
       }
+      CHECK_EQ(n->nn_node->num_outputs(), n->outputs.size());
+      for (uint32_t i = 0; i < n->outputs.size(); ++i) {
+        const NodeEntry& out_ent = {n->nn_node, i, 0};
+        feed_dict.insert({out_ent, n->outputs[i]});
+      }
       forward_nodes.insert(n->nn_node.get());
     });
 
@@ -236,6 +237,18 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
     NodePtr head_grad_node = Node::Create();
     head_grad_node->attrs.name = "__head_grad" + std::to_string(i);
     const NodeEntry grad_entry{head_grad_node, 0, 0};
+
+    if (!grad_outputs.empty()) {
+      // Add gradient output arrays to the feed dictionary.
+      feed_dict.insert({grad_entry, grad_outputs[i]});
+    } else {
+      // Create head grad arrays based on output arrays. All the values are set to be one.
+      // TODO(minjie): delay allocation.
+      NDArray grad(outputs[i].shape(), outputs[i].ctx(), false, outputs[i].dtype());
+      grad = static_cast<real_t>(1.0);
+      feed_dict.insert({grad_entry, grad});
+    }
+
     // Add attribute hints of the gradient entries of outputs
     // to output entries.
     head_grad_entries.emplace_back(exec::AttrHint(
@@ -243,13 +256,7 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
     var_shape_hints.insert({head_grad_node.get(), outputs[i].shape()});
     var_dtype_hints.insert({head_grad_node.get(), outputs[i].dtype()});
   }
-  if (!grad_outputs.empty()) {
-    // Add gradient output arrays to the feed dictionary.
-    CHECK_EQ(head_grad_entries.size(), grad_outputs.size());
-    for (size_t i = 0; i < head_grad_entries.size(); ++i) {
-      feed_dict.insert({head_grad_entries[i], grad_outputs[i]});
-    }
-  }
+  
 
   // Extract argument entries.
   vector<NodeEntry> arg_entries;
@@ -285,16 +292,21 @@ AutogradRuntime::AutogradGraph AutogradRuntime::CreateGradientGraph(
   }
 
   const auto& idx = g.indexed_graph();
-  std::cout << ">>>>>Whole graph after gradient" << std::endl;
+  /*std::cout << ">>>>>Whole graph after gradient" << std::endl;
   for (uint32_t nid = 0; nid < idx.num_nodes(); ++nid) {
     const nnvm::Node* node = idx[nid].source;
-    std::cout << "Node #" << nid << ": " << node->attrs.name << " fwd?" << (forward_nodes.count(node) == 1);
+    std::cout << "Node #" << nid << ": " << node->attrs.name
+      << " fwd?" << (forward_nodes.count(node) == 1);
     if (!idx[nid].source->is_variable()) {
       std::cout << " op: " << idx[nid].source->attrs.op->name;
     }
     std::cout << std::endl;
   }
-  std::cout << "<<<<<Whole graph after gradient" << std::endl;
+  std::cout << "===== Feed dict: " << std::endl;
+  for (const auto& kv : feed_dict) {
+    std::cout << "Entry #" << idx.entry_id(kv.first) << ": " << kv.second.var() << std::endl;
+  }
+  std::cout << "<<<<<Whole graph after gradient" << std::endl;*/
 
   // Shape/Type inference.
   const vector<uint32_t>& input_nodes = idx.input_nodes();
