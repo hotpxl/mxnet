@@ -182,6 +182,12 @@ void ImperativeRuntime::MarkAsOutput(NDArray const& array) {
   extra_outputs_.push_back(array);
 }
 
+void ImperativeRuntime::SetContext(int dev_type, int dev_id) {
+  assert(jit_enabled_);
+  default_context_ = std::make_shared<Context>(
+      Context::Create(static_cast<Context::DeviceType>(dev_type), dev_id));
+}
+
 void ImperativeRuntime::Invoke(ComputingRecord record) {
   PushJITRecord(record);
 }
@@ -215,17 +221,19 @@ void ImperativeRuntime::FlushJITSequence() {
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   } else {
     auto compiled_symbol = std::make_shared<CompiledSymbol>(
-        CompileToSymbol(&jit_sequence_, extra_outputs_));
+        CompileToSymbol(&jit_sequence_, extra_outputs_, default_context_));
     jit_graphs_.emplace(new_graph, compiled_symbol);
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   }
-  jit_sequence_.clear();
   extra_outputs_.clear();
+  jit_sequence_.clear();
+  default_context_.reset();
 }
 
 ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
     std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence,
-    std::vector<NDArray> const& extra_outputs) {
+    std::vector<NDArray> const& extra_outputs,
+    std::shared_ptr<Context> default_context) {
   auto array_to_id = AssignRelativeOrderToArrays(*jit_sequence);
 
   std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
@@ -286,7 +294,8 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
   nnvm::NodeEntryMap<Context> ctxs;
   for (auto&& kv : node_to_array) {
     shapes.emplace(kv.first, kv.second.shape());
-    ctxs.emplace(kv.first, kv.second.ctx());
+    ctxs.emplace(kv.first,
+                 default_context ? *default_context : kv.second.ctx());
   }
 
   Executor* exec = BindSymbol(symbol, shapes, ctxs);

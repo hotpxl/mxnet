@@ -17,13 +17,21 @@ def disable_jit():
     base.check_call(base._LIB.MXDisableJIT())
 
 
+def set_jit_context(ctx):
+    base.check_call(
+        base._LIB.MXSetJITContext(
+            ctypes.c_int(ctx.device_typeid), ctypes.c_int(ctx.device_id)))
+
+
 class JITContext():
     def mark_as_output(self, arr):
         base.check_call(base._LIB.MXJITMarkAsOutput(arr.handle))
 
 
 @contextlib.contextmanager
-def jit():
+def jit(ctx=None):
     enable_jit()
+    if ctx is not None:
+        set_jit_context(ctx)
     yield JITContext()
     disable_jit()
