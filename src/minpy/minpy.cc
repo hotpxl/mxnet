@@ -56,7 +56,7 @@ AssignRelativeOrderToArrays(
 
 // Call underlying functin in the old way.
 void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
-  std::fprintf(stderr, "Strict evaluating \"%s\".\n", record.op->name.c_str());
+  // std::fprintf(stderr, "Strict evaluating \"%s\".\n", record.op->name.c_str());
   PushFCompute(record.delayed_function, record.op, record.attrs, record.ctx,
                record.read_vars, record.write_vars, record.requested,
                record.inputs, record.outputs);
@@ -195,8 +195,8 @@ void ImperativeRuntime::Invoke(ComputingRecord record) {
 void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
   if (jit_enabled_) {
     // Save for lazy evaluation.
-    std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",
-                 record.op->name.c_str());
+    // std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",
+    //              record.op->name.c_str());
     jit_sequence_.emplace_back(std::move(record));
   } else {
     DoStrictEvaluation(std::move(record));
@@ -215,8 +215,8 @@ void ImperativeRuntime::FlushJITSequence() {
       break;
     }
   }
-  std::fprintf(stderr, "Compare graph result: %d.\n",
-               static_cast<bool>(compiled_symbol));
+  // std::fprintf(stderr, "Compare graph result: %d.\n",
+  //              static_cast<bool>(compiled_symbol));
   if (static_cast<bool>(compiled_symbol)) {
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   } else {
@@ -320,9 +320,7 @@ void ImperativeRuntime::RunCompiledSymbol(
     }
   }
 
-  // std::printf("Running symbol.\n");
   exec->Forward(false);
-  // std::printf("Running symbol complete.\n");
 
   for (auto&& p : array_to_id) {
     auto id = p.second;
@@ -330,7 +328,9 @@ void ImperativeRuntime::RunCompiledSymbol(
     if (compiled_symbol->output_array_ids.count(id) != 0) {
       array.CheckAndAlloc();
       auto&& node = compiled_symbol->array_id_to_node.at(id);
-      CopyFromTo(exec->data_entry_.at(idx.entry_id(node)), &array);
+      auto&& arr = exec->data_entry_.at(idx.entry_id(node));
+      arr.WaitToRead();
+      CopyFromTo(arr, &array);
     }
   }
 }
