@@ -329,8 +329,8 @@ void ImperativeRuntime::RunCompiledSymbol(
       array.CheckAndAlloc();
       auto&& node = compiled_symbol->array_id_to_node.at(id);
       auto&& arr = exec->data_entry_.at(idx.entry_id(node));
-      arr.WaitToRead();
       CopyFromTo(arr, &array);
+      array.WaitToRead();
     }
   }
 }
