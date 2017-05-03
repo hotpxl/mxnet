@@ -330,6 +330,7 @@ void ImperativeRuntime::RunCompiledSymbol(
       auto&& node = compiled_symbol->array_id_to_node.at(id);
       auto&& arr = exec->data_entry_.at(idx.entry_id(node));
       CopyFromTo(arr, &array);
+      // TODO(yutian): optional?
       array.WaitToRead();
     }
   }
