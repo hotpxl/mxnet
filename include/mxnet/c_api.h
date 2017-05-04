@@ -1512,6 +1512,12 @@ MXNET_DLL int MXDisableJIT();
  */
 MXNET_DLL int MXJITMarkAsOutput(NDArrayHandle handle);
 
+/*!
+ * \brief Set default context of JIT.
+ * \return 0 when success, -1 when failed.
+ */
+MXNET_DLL int MXSetJITContext(int dev_type, int dev_id);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

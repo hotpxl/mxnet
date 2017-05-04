@@ -25,3 +25,9 @@ MXNET_DLL int MXJITMarkAsOutput(NDArrayHandle handle) {
       *static_cast<NDArray*>(handle));
   API_END();
 }
+
+MXNET_DLL int MXSetJITContext(int dev_type, int dev_id) {
+  API_BEGIN();
+  mxnet::minpy::ImperativeRuntime::Get()->SetContext(dev_type, dev_id);
+  API_END();
+}

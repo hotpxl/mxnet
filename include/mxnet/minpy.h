@@ -40,6 +40,7 @@ class ImperativeRuntime final {
   void DisableJIT();
   void StrictEvaluate();
   void MarkAsOutput(NDArray const& array);
+  void SetContext(int dev_type, int dev_id);
 
   struct ComputingRecord {
     using DelayedFunction = FCompute;
@@ -67,6 +68,8 @@ class ImperativeRuntime final {
   void PushJITRecord(ComputingRecord record);
   void FlushJITSequence();
 
+  bool jit_enabled_{false};
+  std::shared_ptr<Context> default_context_{nullptr};
   std::vector<ComputingRecord> jit_sequence_{};
   std::vector<NDArray> extra_outputs_{};
 
@@ -82,11 +85,10 @@ class ImperativeRuntime final {
   std::unordered_map<std::shared_ptr<JITGraph>, std::shared_ptr<CompiledSymbol>>
       jit_graphs_{};
 
-  bool jit_enabled_ = false;
-
   static CompiledSymbol CompileToSymbol(
       std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence,
-      std::vector<NDArray> const& extra_outputs);
+      std::vector<NDArray> const& extra_outputs,
+      std::shared_ptr<Context> default_context);
   static void RunCompiledSymbol(std::shared_ptr<CompiledSymbol> compiled_symbol,
                                 std::vector<ComputingRecord>* jit_sequence);
 };  // class ImperativeRuntime

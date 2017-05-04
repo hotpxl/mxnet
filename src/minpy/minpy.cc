@@ -56,7 +56,7 @@ AssignRelativeOrderToArrays(
 
 // Call underlying functin in the old way.
 void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
-  std::fprintf(stderr, "Strict evaluating \"%s\".\n", record.op->name.c_str());
+  // std::fprintf(stderr, "Strict evaluating \"%s\".\n", record.op->name.c_str());
   PushFCompute(record.delayed_function, record.op, record.attrs, record.ctx,
                record.read_vars, record.write_vars, record.requested,
                record.inputs, record.outputs);
@@ -182,6 +182,12 @@ void ImperativeRuntime::MarkAsOutput(NDArray const& array) {
   extra_outputs_.push_back(array);
 }
 
+void ImperativeRuntime::SetContext(int dev_type, int dev_id) {
+  assert(jit_enabled_);
+  default_context_ = std::make_shared<Context>(
+      Context::Create(static_cast<Context::DeviceType>(dev_type), dev_id));
+}
+
 void ImperativeRuntime::Invoke(ComputingRecord record) {
   PushJITRecord(record);
 }
@@ -189,8 +195,8 @@ void ImperativeRuntime::Invoke(ComputingRecord record) {
 void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
   if (jit_enabled_) {
     // Save for lazy evaluation.
-    std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",
-                 record.op->name.c_str());
+    // std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",
+    //              record.op->name.c_str());
     jit_sequence_.emplace_back(std::move(record));
   } else {
     DoStrictEvaluation(std::move(record));
@@ -209,23 +215,25 @@ void ImperativeRuntime::FlushJITSequence() {
       break;
     }
   }
-  std::fprintf(stderr, "Compare graph result: %d.\n",
-               static_cast<bool>(compiled_symbol));
+  // std::fprintf(stderr, "Compare graph result: %d.\n",
+  //              static_cast<bool>(compiled_symbol));
   if (static_cast<bool>(compiled_symbol)) {
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   } else {
     auto compiled_symbol = std::make_shared<CompiledSymbol>(
-        CompileToSymbol(&jit_sequence_, extra_outputs_));
+        CompileToSymbol(&jit_sequence_, extra_outputs_, default_context_));
     jit_graphs_.emplace(new_graph, compiled_symbol);
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   }
-  jit_sequence_.clear();
   extra_outputs_.clear();
+  jit_sequence_.clear();
+  default_context_.reset();
 }
 
 ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
     std::vector<ImperativeRuntime::ComputingRecord>* jit_sequence,
-    std::vector<NDArray> const& extra_outputs) {
+    std::vector<NDArray> const& extra_outputs,
+    std::shared_ptr<Context> default_context) {
   auto array_to_id = AssignRelativeOrderToArrays(*jit_sequence);
 
   std::unordered_map<std::size_t, nnvm::NodeEntry> array_id_to_node;
@@ -286,7 +294,8 @@ ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
   nnvm::NodeEntryMap<Context> ctxs;
   for (auto&& kv : node_to_array) {
     shapes.emplace(kv.first, kv.second.shape());
-    ctxs.emplace(kv.first, kv.second.ctx());
+    ctxs.emplace(kv.first,
+                 default_context ? *default_context : kv.second.ctx());
   }
 
   Executor* exec = BindSymbol(symbol, shapes, ctxs);
@@ -311,9 +320,7 @@ void ImperativeRuntime::RunCompiledSymbol(
     }
   }
 
-  // std::printf("Running symbol.\n");
   exec->Forward(false);
-  // std::printf("Running symbol complete.\n");
 
   for (auto&& p : array_to_id) {
     auto id = p.second;
@@ -321,7 +328,10 @@ void ImperativeRuntime::RunCompiledSymbol(
     if (compiled_symbol->output_array_ids.count(id) != 0) {
       array.CheckAndAlloc();
       auto&& node = compiled_symbol->array_id_to_node.at(id);
-      CopyFromTo(exec->data_entry_.at(idx.entry_id(node)), &array);
+      auto&& arr = exec->data_entry_.at(idx.entry_id(node));
+      CopyFromTo(arr, &array);
+      // TODO(yutian): optional?
+      array.WaitToRead();
     }
   }
 }
