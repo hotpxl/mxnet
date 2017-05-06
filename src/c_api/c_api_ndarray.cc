@@ -492,12 +492,9 @@ int MXAutogradComputeGradient(mx_uint num_output,
       ndoutputs.reserve(node->num_outputs());
       for (uint32_t i = 0; i < node->inputs.size(); ++i) {
         const nnvm::NodeEntry& in_ent = node->inputs[i];
-        const uint32_t in_ent_id = idx.entry_id(in_ent);
-        if (!feed_dict.count(in_ent)) {
-          // TODO(minjie): delay allocation
-          NDArray nd(shapes[in_ent_id], ctx, false, dtypes[in_ent_id]);
-          feed_dict.insert({in_ent, nd});
-        }
+        CHECK(feed_dict.count(in_ent))
+          << "Error in autograd: Cannot find input entry: "
+          << in_ent.node->attrs.name << " " << in_ent.index;
         ndinputs.push_back(feed_dict[in_ent]);
       }
       for (uint32_t i = 0; i < node->num_outputs(); ++i) {
