@@ -204,6 +204,8 @@ void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
 }
 
 void ImperativeRuntime::FlushJITSequence() {
+  extra_outputs_.clear();
+  default_context_.reset();
   if (jit_sequence_.empty()) {
     return;
   }
@@ -225,9 +227,7 @@ void ImperativeRuntime::FlushJITSequence() {
     jit_graphs_.emplace(new_graph, compiled_symbol);
     RunCompiledSymbol(compiled_symbol, &jit_sequence_);
   }
-  extra_outputs_.clear();
   jit_sequence_.clear();
-  default_context_.reset();
 }
 
 ImperativeRuntime::CompiledSymbol ImperativeRuntime::CompileToSymbol(
