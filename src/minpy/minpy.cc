@@ -90,10 +90,9 @@ Executor* BindSymbol(Symbol symbol, nnvm::NodeEntryMap<TShape> const& shapes,
       << "The size of context mapping should be greater than zero.";
   Context ctx = ctxs.begin()->second;
 
-  std::map<std::string, Context> ctx_map;
-  std::vector<NDArray> aux_states;
-
-  return Executor::Bind(symbol, ctx, ctx_map, inputs, {}, {}, aux_states);
+  auto exec = new exec::GraphExecutor();
+  exec->Init(symbol, ctx, {}, inputs, {}, {}, {}, nullptr, {}, shapes);
+  return exec;
 }
 
 }  // anonymous namespace
