@@ -26,8 +26,9 @@ def set_is_training(is_train):
     previous state before this set.
     """
     prev = ctypes.c_int()
-    check_call(_LIB.MXAutogradSetIsTraining(
-        ctypes.c_int(is_train), ctypes.byref(prev)))
+    check_call(
+        _LIB.MXAutogradSetIsTraining(
+            ctypes.c_int(is_train), ctypes.byref(prev)))
     return bool(prev.value)
 
 
@@ -39,6 +40,7 @@ class TrainingStateScope(object):
             y = model(x)
             compute_gradient([y])
     """
+
     def __init__(self, enter_state):
         self._enter_state = enter_state
         self._prev = None
@@ -90,15 +92,17 @@ def mark_variables(variables, gradients, grad_reqs='write'):
         variable_handles.append(var.handle)
         gradient_handles.append(gradvar.handle)
     if isinstance(grad_reqs, string_types):
-        grad_reqs = [_GRAD_REQ_MAP[grad_reqs]]*len(variables)
+        grad_reqs = [_GRAD_REQ_MAP[grad_reqs]] * len(variables)
     else:
         grad_reqs = [_GRAD_REQ_MAP[i] for i in grad_reqs]
 
-    check_call(_LIB.MXAutogradMarkVariables(
-        len(variable_handles),
-        c_array(NDArrayHandle, variable_handles),
-        c_array(mx_uint, grad_reqs),
-        c_array(NDArrayHandle, gradient_handles)))
+    check_call(
+        _LIB.MXAutogradMarkVariables(
+            len(variable_handles),
+            c_array(NDArrayHandle, variable_handles),
+            c_array(mx_uint, grad_reqs),
+            c_array(NDArrayHandle, gradient_handles)))
+
 
 def compute_gradient(outputs, grad_outputs=None):
     """Compute the gradients of outputs w.r.t variables.
@@ -117,9 +121,11 @@ def compute_gradient(outputs, grad_outputs=None):
     output_handles = c_array(NDArrayHandle, [arr.handle for arr in outputs])
     grad_handles = None
     if grad_outputs is not None:
-        grad_handles = c_array(NDArrayHandle, [arr.handle for arr in grad_outputs])
-    check_call(_LIB.MXAutogradComputeGradient(
-        len(output_handles), output_handles, grad_handles))
+        grad_handles = c_array(NDArrayHandle,
+                               [arr.handle for arr in grad_outputs])
+    check_call(
+        _LIB.MXAutogradComputeGradient(
+            len(output_handles), output_handles, grad_handles))
 
 
 def grad_and_loss(func, argnum=None):
@@ -137,6 +143,7 @@ def grad_and_loss(func, argnum=None):
     grad_and_loss_func: a python function
         A function that would compute both the gradient of arguments and loss value.
     """
+
     @functools.wraps(func)
     def wrapped(*args):
         """Wrapped function."""
@@ -145,14 +152,21 @@ def grad_and_loss(func, argnum=None):
             argnum_ = argnum if isinstance(argnum, list) else [argnum]
             variables = [args[i] for i in argnum_]
         for x in variables:
-            assert isinstance(x, NDArray), "type of autograd input should NDArray."
-        grads = [NDArray(_new_alloc_handle(x.shape, x.context, True, x.dtype)) for x in variables]
+            assert isinstance(
+                x, NDArray), "type of autograd input should NDArray."
+        grads = [
+            NDArray(_new_alloc_handle(x.shape, x.context, True, x.dtype))
+            for x in variables
+        ]
         mark_variables(variables, grads)
         with train():
             outputs = func(*args)
-        compute_gradient([outputs] if isinstance(outputs, NDArray) else outputs)
+        compute_gradient([outputs]
+                         if isinstance(outputs, NDArray) else outputs)
         return grads, outputs
+
     return wrapped
+
 
 def grad(func, argnum=None):
     """Return function that computes gradient of arguments.
@@ -186,7 +200,9 @@ def grad(func, argnum=None):
     >>>     grad_vals = grad_func(inputs)
     """
     grad_with_loss_func = grad_and_loss(func, argnum)
+
     @functools.wraps(grad_with_loss_func)
     def wrapped(*args):
         return grad_with_loss_func(*args)[0]
+
     return wrapped
