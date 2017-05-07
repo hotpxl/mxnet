@@ -56,7 +56,8 @@ AssignRelativeOrderToArrays(
 
 // Call underlying functin in the old way.
 void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
-  // std::fprintf(stderr, "Strict evaluating \"%s\".\n", record.op->name.c_str());
+  // std::fprintf(stderr, "Strict evaluating \"%s\".\n",
+  // record.op->name.c_str());
   PushFCompute(record.delayed_function, record.op, record.attrs, record.ctx,
                record.read_vars, record.write_vars, record.requested,
                record.inputs, record.outputs);
@@ -70,10 +71,6 @@ Executor* BindSymbol(Symbol symbol, nnvm::NodeEntryMap<TShape> const& shapes,
   std::size_t input_size = input_nodes.size();
   std::vector<NDArray> inputs;
   inputs.reserve(input_size);
-  std::vector<NDArray> grads;
-  grads.reserve(input_size);
-  std::vector<OpReqType> grad_reqs;
-  grad_reqs.reserve(input_size);
 
   // Prepare inputs and set grad for every input.
   for (std::size_t i = 0; i < input_size; ++i) {
@@ -82,10 +79,6 @@ Executor* BindSymbol(Symbol symbol, nnvm::NodeEntryMap<TShape> const& shapes,
       TShape shape = shapes.at(e);
       Context ctx = ctxs.at(e);
       inputs.emplace_back(shape, ctx);
-      NDArray grad(shape, ctx);
-      grad = static_cast<real_t>(1.0);
-      grads.emplace_back(grad);
-      grad_reqs.emplace_back(OpReqType::kWriteTo);
     } else {
       LOG(FATAL) << "No corresponding NDArray: " << input_nodes[i]->attrs.name
                  << "(0).";
@@ -100,8 +93,7 @@ Executor* BindSymbol(Symbol symbol, nnvm::NodeEntryMap<TShape> const& shapes,
   std::map<std::string, Context> ctx_map;
   std::vector<NDArray> aux_states;
 
-  return Executor::Bind(symbol, ctx, ctx_map, inputs, grads, grad_reqs,
-                        aux_states);
+  return Executor::Bind(symbol, ctx, ctx_map, inputs, {}, {}, aux_states);
 }
 
 }  // anonymous namespace
