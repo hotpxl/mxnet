@@ -181,10 +181,6 @@ void ImperativeRuntime::SetContext(int dev_type, int dev_id) {
 }
 
 void ImperativeRuntime::Invoke(ComputingRecord record) {
-  PushJITRecord(record);
-}
-
-void ImperativeRuntime::PushJITRecord(ComputingRecord record) {
   if (jit_enabled_) {
     // Save for lazy evaluation.
     // std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",

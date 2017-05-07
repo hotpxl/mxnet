@@ -65,7 +65,6 @@ class ImperativeRuntime final {
   ImperativeRuntime& operator=(ImperativeRuntime const&) = delete;
   ImperativeRuntime& operator=(ImperativeRuntime&&) = delete;
 
-  void PushJITRecord(ComputingRecord record);
   void FlushJITSequence();
 
   bool jit_enabled_{false};
