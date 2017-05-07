@@ -7,7 +7,7 @@ import ctypes
 import functools
 from ..base import _LIB, check_call, string_types
 from ..base import mx_uint, NDArrayHandle, c_array
-from ..ndarray import NDArray, zeros_like
+from ..ndarray import NDArray, zeros_like, _new_alloc_handle
 from ..symbol import _GRAD_REQ_MAP
 
 
@@ -146,7 +146,7 @@ def grad_and_loss(func, argnum=None):
             variables = [args[i] for i in argnum_]
         for x in variables:
             assert isinstance(x, NDArray), "type of autograd input should NDArray."
-        grads = [zeros_like(x) for x in variables]
+        grads = [NDArray(_new_alloc_handle(x.shape, x.context, True, x.dtype)) for x in variables]
         mark_variables(variables, grads)
         with train():
             outputs = func(*args)

@@ -373,18 +373,13 @@ int MXImperativeInvoke(AtomicSymbolCreator creator,
     }
 
     if (fn) {
-      // TODO(yutian): Great. We have a FCompute here and we want to redirect it
-      // to ImperativeRuntime to execute.
       if (AutogradRuntime::Get()->IsTraining()) {
         AutogradRuntime::Get()->RecordImperativeFCompute(fn, op,
             attrs, &ndinputs, &ndoutputs);
       }
-      PushFCompute(fn, op, attrs, ctx, read_vars, write_vars,
-          requested, ndinputs, ndoutputs);
-      // TODO(yutian): Question. Is it safe to record op here? Answer(ziheng): Yes.
-      //minpy::ImperativeRuntime::Get()->Invoke({fn, op, attrs, ctx, read_vars,
-                                               //write_vars, requested, ndinputs,
-                                               //ndoutputs});
+      minpy::ImperativeRuntime::Get()->Invoke({fn, op, attrs, ctx, read_vars,
+                                               write_vars, requested, ndinputs,
+                                               ndoutputs});
     } else if (createop.count(op)) {
       std::shared_ptr<Operator> opr(
           createop[op](attrs, ctx, ret->arg_shapes, ret->arg_types));
@@ -466,7 +461,7 @@ int MXAutogradComputeGradient(mx_uint num_output,
   }
 
   //AutogradRuntime::Get()->ComputeGradient(outputs, grad_outputs);
-  
+
   // TODO(minjie): infer context.
   const Context& ctx = outputs[0].ctx();
 
@@ -525,8 +520,9 @@ int MXAutogradComputeGradient(mx_uint num_output,
         << "Currently only operators registered through FCompute is allowed."
         << " No FCompute is registered for Operator \"" << op->name << "\".";
 
-      PushFCompute(fn, op, node->attrs, ctx, read_vars, write_vars,
-          requested, ndinputs, ndoutputs);
+      minpy::ImperativeRuntime::Get()->Invoke({fn, op, node->attrs, ctx,
+                                               read_vars, write_vars, requested,
+                                               ndinputs, ndoutputs});
     });
 
   API_END();
