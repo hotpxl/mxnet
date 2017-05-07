@@ -57,16 +57,17 @@ class GraphExecutor : public Executor {
   void Print(std::ostream &os) const override; // NOLINT(*)
   void SetMonitorCallback(const MonitorCallback& callback) override;
   // initialized the executor
-  void Init(nnvm::Symbol symbol,
-            const Context& default_ctx,
+  void Init(nnvm::Symbol symbol, const Context& default_ctx,
             const std::map<std::string, Context>& ctx_map,
             const std::vector<NDArray>& in_args,
             const std::vector<NDArray>& arg_grad_store,
             const std::vector<OpReqType>& grad_req_type,
             const std::vector<NDArray>& aux_states,
             Executor* shared_exec = nullptr,
-            const nnvm::NodeEntryMap<NDArray>& feed_dict
-              = nnvm::NodeEntryMap<NDArray>());
+            const nnvm::NodeEntryMap<NDArray>& feed_dict =
+                nnvm::NodeEntryMap<NDArray>(),
+            nnvm::NodeEntryMap<TShape> const& shape_hints =
+                nnvm::NodeEntryMap<TShape>());
 
  protected:
   // Information about operational node
@@ -101,15 +102,16 @@ class GraphExecutor : public Executor {
   };
 
   // internal initialization of the graph.
-  Graph InitGraph(nnvm::Symbol symbol,
-                  const Context& default_ctx,
+  Graph InitGraph(nnvm::Symbol symbol, const Context& default_ctx,
                   const std::map<std::string, Context>& ctx_map,
                   const std::vector<NDArray>& in_args,
                   const std::vector<NDArray>& arg_grad_store,
                   const std::vector<OpReqType>& grad_req_type,
                   const std::vector<NDArray>& aux_states,
-                  const nnvm::NodeEntryMap<NDArray>& feed_dict
-                    = nnvm::NodeEntryMap<NDArray>());
+                  const nnvm::NodeEntryMap<NDArray>& feed_dict =
+                      nnvm::NodeEntryMap<NDArray>(),
+                  nnvm::NodeEntryMap<TShape> const& shape_hints =
+                      nnvm::NodeEntryMap<TShape>());
   // initialize the full graph, including gradient.
   Graph InitFullGraph(nnvm::Symbol symbol,
                       const std::vector<OpReqType>& grad_req_type,

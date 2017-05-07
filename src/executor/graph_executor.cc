@@ -330,18 +330,18 @@ Graph AssignContext(Graph g,
   return g;
 }
 
-void GraphExecutor::Init(nnvm::Symbol symbol,
-                         const Context& default_ctx,
+void GraphExecutor::Init(nnvm::Symbol symbol, const Context& default_ctx,
                          const std::map<std::string, Context>& ctx_map,
                          const std::vector<NDArray>& in_args,
                          const std::vector<NDArray>& arg_grad_store,
                          const std::vector<OpReqType>& grad_req_type,
                          const std::vector<NDArray>& aux_states,
                          Executor* shared_exec,
-                         const nnvm::NodeEntryMap<NDArray>& feed_dict) {
-  nnvm::Graph g = InitGraph(symbol, default_ctx,
-                            ctx_map, in_args, arg_grad_store,
-                            grad_req_type, aux_states, feed_dict);
+                         const nnvm::NodeEntryMap<NDArray>& feed_dict,
+                         nnvm::NodeEntryMap<TShape> const& shape_hints) {
+  nnvm::Graph g =
+      InitGraph(symbol, default_ctx, ctx_map, in_args, arg_grad_store,
+                grad_req_type, aux_states, feed_dict, shape_hints);
   g.attrs["saved_opr"] = std::make_shared<nnvm::any>(std::move(saved_opr_));
   g = AttachOpExecs(g);
   g = AttachOpResources(g);
@@ -370,14 +370,14 @@ void GraphExecutor::Init(nnvm::Symbol symbol,
   this->InitOpSegs();
 }
 
-Graph GraphExecutor::InitGraph(nnvm::Symbol symbol,
-                               const Context& default_ctx,
+Graph GraphExecutor::InitGraph(nnvm::Symbol symbol, const Context& default_ctx,
                                const std::map<std::string, Context>& ctx_map,
                                const std::vector<NDArray>& in_args,
                                const std::vector<NDArray>& arg_grad_store,
                                const std::vector<OpReqType>& grad_req_type,
                                const std::vector<NDArray>& aux_states,
-                               const nnvm::NodeEntryMap<NDArray>& feed_dict) {
+                               const nnvm::NodeEntryMap<NDArray>& feed_dict,
+                               nnvm::NodeEntryMap<TShape> const& shape_hints) {
   // setup gradient
   nnvm::Graph g = InitFullGraph(symbol, grad_req_type, arg_grad_store);
   g = AssignContext(g, default_ctx, ctx_map,
@@ -386,6 +386,9 @@ Graph GraphExecutor::InitGraph(nnvm::Symbol symbol,
                     aux_states,
                     num_forward_inputs_,
                     num_forward_outputs_);
+  if (shape_hints.size() != 0) {
+    g.attrs["shape_hints"] = std::make_shared<dmlc::any>(shape_hints);
+  }
   const auto& idx = g.indexed_graph();
   // get number of nodes used in forward pass
   num_forward_nodes_ = 0;
