@@ -1595,6 +1595,30 @@ MXNET_DLL int MXRtcFree(RtcHandle handle);
 
 MXNET_DLL int MXCustomOpRegister(const char* op_type, CustomOpPropCreator creator);
 
+/*!
+ * \brief Enable JIT.
+ * \return 0 when success, -1 when failed.
+ */
+MXNET_DLL int MXEnableJIT();
+
+/*!
+ * \brief Disable JIT.
+ * \return 0 when success, -1 when failed.
+ */
+MXNET_DLL int MXDisableJIT();
+
+/*!
+ * \brief Mark NDArray as output.
+ * \return 0 when success, -1 when failed.
+ */
+MXNET_DLL int MXJITMarkAsOutput(NDArrayHandle handle);
+
+/*!
+ * \brief Set default context of JIT.
+ * \return 0 when success, -1 when failed.
+ */
+MXNET_DLL int MXSetJITContext(int dev_type, int dev_id);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

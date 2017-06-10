@@ -34,6 +34,10 @@ namespace autograd {
 class AutogradRuntime;
 }
 
+namespace minpy {
+class ImperativeRuntime;
+}
+
 namespace exec {
 
 using nnvm::Graph;
@@ -42,6 +46,7 @@ using nnvm::Graph;
 class GraphExecutor : public Executor {
  public:
   friend class autograd::AutogradRuntime;
+  friend class minpy::ImperativeRuntime;
   using Executor::MonitorCallback;
 
   virtual ~GraphExecutor();
