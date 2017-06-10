@@ -49,20 +49,20 @@ W = gaussian(shape=(D, 10))
 b = nd.zeros(shape=(10, ))
 
 N = 128
-X = gaussian(shape=(N, 784 / 7, 7))
+X = gaussian(shape=(N, 784 // 7, 7))
 
-t0 = time.time()
 for index in range(10):
     h = nd.zeros((N, D))
     c = nd.zeros((N, D))
 
-    for i in range(784 / 7):
+    for i in range(784 // 7):
         patch = mx.nd.slice_axis(X, axis=1, begin=i, end=(i + 1))
+        t0 = time.time()
         i = sigmoid(linear(patch, Wxi, bxi) + linear(h, Whi, bhi))
         f = sigmoid(linear(patch, Wxf, bxf) + linear(h, Whf, bhf))
         o = sigmoid(linear(patch, Wxo, bxo) + linear(h, Who, bho))
         g = nd.tanh(linear(patch, Wxg, bxg) + linear(h, Whg, bhg))
         c = f * c + i * g
         h = o * mx.nd.tanh(c)
+        print((time.time() - t0) / (index + 1))
         linear(h, W, b).asnumpy()
-        print(time.time() - t0) / (index + 1)
