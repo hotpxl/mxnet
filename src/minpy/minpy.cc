@@ -56,8 +56,7 @@ AssignRelativeOrderToArrays(
 
 // Call underlying functin in the old way.
 void DoStrictEvaluation(ImperativeRuntime::ComputingRecord record) {
-  // std::fprintf(stderr, "Strict evaluating \"%s\".\n",
-  // record.op->name.c_str());
+  std::fprintf(stderr, "Strict evaluating \"%s\".\n", record.op->name.c_str());
   PushFCompute(record.delayed_function, record.op, record.attrs, record.ctx,
                record.read_vars, record.write_vars, record.requested,
                record.inputs, record.outputs);
@@ -151,39 +150,39 @@ ImperativeRuntime* ImperativeRuntime::Get() {
   return &r;
 }
 
-void ImperativeRuntime::EnableJIT() {
-  assert(!jit_enabled_);
-  jit_enabled_ = true;
+void ImperativeRuntime::StartTrace() {
+  assert(!is_tracing_);
+  is_tracing_ = true;
 }
 
-void ImperativeRuntime::DisableJIT() {
-  assert(jit_enabled_);
+int ImperativeRuntime::EndTrace() {
+  assert(is_tracing_);
   FlushJITSequence();
-  jit_enabled_ = false;
+  is_tracing_ = false;
 }
 
-void ImperativeRuntime::StrictEvaluate() {
-  if (jit_enabled_) {
-    FlushJITSequence();
-  }
-}
+// void ImperativeRuntime::StrictEvaluate() {
+//   if (is_tracing_) {
+//     FlushJITSequence();
+//   }
+// }
 
 void ImperativeRuntime::MarkAsOutput(NDArray const& array) {
-  assert(jit_enabled_);
+  assert(is_tracing_);
   extra_outputs_.push_back(array);
 }
 
 void ImperativeRuntime::SetContext(int dev_type, int dev_id) {
-  assert(jit_enabled_);
+  assert(is_tracing_);
   default_context_ = std::make_shared<Context>(
       Context::Create(static_cast<Context::DeviceType>(dev_type), dev_id));
 }
 
 void ImperativeRuntime::Invoke(ComputingRecord record) {
-  if (jit_enabled_) {
+  if (is_tracing_) {
     // Save for lazy evaluation.
-    // std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",
-    //              record.op->name.c_str());
+    std::fprintf(stderr, "Save \"%s\" for lazy evaluation.\n",
+                 record.op->name.c_str());
     jit_sequence_.emplace_back(std::move(record));
   } else {
     DoStrictEvaluation(std::move(record));

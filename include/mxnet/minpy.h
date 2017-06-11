@@ -36,9 +36,9 @@ class ImperativeRuntime final {
   static ImperativeRuntime* Get();
 
   // Python-side utility functions.
-  void EnableJIT();
-  void DisableJIT();
-  void StrictEvaluate();
+  void StartTrace();
+  int EndTrace();
+  // void StrictEvaluate();
   void MarkAsOutput(NDArray const& array);
   void SetContext(int dev_type, int dev_id);
 
@@ -67,7 +67,7 @@ class ImperativeRuntime final {
 
   void FlushJITSequence();
 
-  bool jit_enabled_{false};
+  bool is_tracing_{false};
   std::shared_ptr<Context> default_context_{nullptr};
   std::vector<ComputingRecord> jit_sequence_{};
   std::vector<NDArray> extra_outputs_{};

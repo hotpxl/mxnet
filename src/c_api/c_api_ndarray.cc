@@ -6,15 +6,16 @@
 
 #include <mxnet/base.h>
 #include <mxnet/c_api.h>
+#include <mxnet/minpy.h>
+#include <mxnet/op_attr_types.h>
 #include <mxnet/operator.h>
 #include <mxnet/operator_util.h>
-#include <mxnet/op_attr_types.h>
 #include <nnvm/node.h>
 #include <nnvm/op_attr_types.h>
 #include <string>
-#include "./c_api_common.h"
 #include "../common/utils.h"
 #include "../ndarray/autograd.h"
+#include "./c_api_common.h"
 
 using namespace mxnet;
 using mxnet::autograd::AutogradRuntime;
@@ -370,8 +371,11 @@ void ImperativeInvokeImpl(const nnvm::NodeAttrs& attrs,
         AutogradRuntime::Get()->RecordImperativeFCompute(op,
             attrs, &ndinputs, &ndoutputs);
       }
-      PushFCompute(fn, op, attrs, ctx, read_vars, write_vars,
-          requested, ndinputs, ndoutputs);
+      // PushFCompute(fn, op, attrs, ctx, read_vars, write_vars,
+      //     requested, ndinputs, ndoutputs);
+      minpy::ImperativeRuntime::Get()->Invoke({fn, op, attrs, ctx, read_vars,
+                                               write_vars, requested, ndinputs,
+                                               ndoutputs});
     } else if (createop.count(op)) {
       std::shared_ptr<Operator> opr(
           createop[op](attrs, ctx, ret->arg_shapes, ret->arg_types));
