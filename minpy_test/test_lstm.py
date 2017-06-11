@@ -66,7 +66,7 @@ def pure(func):
         'output_shapes': None,
     }
 
-    # fmap :: (a -> b) -> Either a [a] -> Either b [b]
+    # fmap :: (NDArray -> b) -> Either NDArray [NDArray] -> Either b [b]
     def fmap(f, value):
         if isinstance(value, mx.nd.NDArray):
             return f(value)
