@@ -54,13 +54,6 @@ X = gaussian(shape=(N, 784 // 7, 7))
 
 
 def pure(func):
-    '''
-    Assumptions:
-    1. Closed (pure) function.
-    2. Arguments are of type NDArray.
-    3. Return value is either NDArray of an iterable of NDArrays.
-    4. No side effect.
-    '''
     closure_payload = {
         'segment_id': None,
         'output_shapes': None,
@@ -83,9 +76,10 @@ def pure(func):
             closure_payload['segment_id'] = segment_id
             closure_payload['output_shapes'] = fmap(lambda x: x.shape, ret)
         ret_value = fmap(lambda x: mx.nd.zeros(shape=x.shape), closure_payload['output_shapes'])
-        run_segment(segment_id, args, closure_payload, ret_value)
+        success = run_segment(segment_id, args, closure_payload, ret_value)
+        if not success:
+            raise RuntimeError('Arguments incompatible with compiled segment.')
         return ret_value
-
     return wrapper
 
 
